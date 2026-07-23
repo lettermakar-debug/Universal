@@ -1,12 +1,13 @@
 -- ========================================
---   🔪 MM2 ULTIMATE HUB (ПРОСТАЯ ВЕРСИЯ)
---   ВСЕ ФУНКЦИИ РАБОТАЮТ
+--   🔪 MM2 ULTIMATE HUB - ПОЛНАЯ ВЕРСИЯ
+--   Все функции работают!
 -- ========================================
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 
 local player = LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
@@ -25,8 +26,6 @@ local flySpeed = 50
 local flyBodyVelocity = nil
 local flyBodyGyro = nil
 local flyConnections = {}
-local flingEnabled = false
-local flingThread = nil
 local flingPower = 5000
 local autoShoot = false
 local autoShootThread = nil
@@ -121,22 +120,42 @@ Players.PlayerAdded:Connect(function(plr)
 end)
 
 -- ===== ТЕЛЕПОРТЫ =====
-local function teleportToWeapon() 
-    local w = findWeapon() 
-    if w then teleportTo(w) else print("Оружие не найдено") end 
+local function teleportToWeapon()
+    local w = findWeapon()
+    if w then teleportTo(w) else print("❌ Оружие не найдено") end
 end
 
 local function teleportToRole(roleName)
     for _, plr in pairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
             local role = getRole(plr)
-            if role == roleName and plr.Character then 
-                teleportTo(plr.Character) 
-                return 
+            if role == roleName and plr.Character then
+                teleportTo(plr.Character)
+                print("✅ Телепорт к " .. roleName)
+                return
             end
         end
     end
-    print(roleName .. " не найден")
+    print("❌ " .. roleName .. " не найден")
+end
+
+-- ===== ШОТ МАРДЕР =====
+local function shootMurderer()
+    if getRole(LocalPlayer) ~= "Sheriff" then
+        print("❌ Вы не шериф!")
+        return
+    end
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and getRole(plr) == "Murderer" and plr.Character then
+            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.Health = 0
+                print("🔫 Убийца уничтожен!")
+                return
+            end
+        end
+    end
+    print("❌ Убийца не найден")
 end
 
 -- ===== ФЛИНГ =====
@@ -149,58 +168,24 @@ local function flingPlayer(target)
     hrp.AssemblyAngularVelocity = Vector3.new(math.random(-100, 100), math.random(-100, 100), math.random(-100, 100))
 end
 
-local function toggleFling(state)
-    flingEnabled = state
-    if state then
-        if flingThread then coroutine.close(flingThread) end
-        flingThread = coroutine.create(function()
-            while flingEnabled do
-                for _, plr in pairs(Players:GetPlayers()) do
-                    if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-                        flingPlayer(plr)
-                    end
-                end
-                wait(0.5)
-            end
-        end)
-        coroutine.resume(flingThread)
-    else
-        if flingThread then coroutine.close(flingThread) end
-        flingThread = nil
+local function flingAll()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+            flingPlayer(plr)
+        end
     end
+    print("🌀 Все подброшены!")
 end
 
--- ===== УМНАЯ АТАКА =====
-local function smartAttack()
-    local myRole = getRole(LocalPlayer)
-    if myRole == "Murderer" then
-        for _, plr in pairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and plr.Character then
-                local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-                if hum then hum.Health = 0 end
-            end
+-- ===== УБИТЬ ВСЕХ =====
+local function killAll()
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.Health = 0 end
         end
-        print("Все убиты (вы убийца)")
-    elseif myRole == "Sheriff" then
-        for _, plr in pairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and getRole(plr) == "Murderer" and plr.Character then
-                local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-                if hum then hum.Health = 0 end
-                print("Убийца уничтожен")
-                return
-            end
-        end
-        print("Убийца не найден")
-    else
-        for _, plr in pairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and getRole(plr) == "Murderer" and plr.Character then
-                teleportTo(plr.Character)
-                print("Телепорт к убийце")
-                return
-            end
-        end
-        print("Убийца не найден")
     end
+    print("💀 Все убиты!")
 end
 
 -- ===== АВТО-СТРЕЛЬБА =====
@@ -226,17 +211,6 @@ local function toggleAutoShoot(state)
         if autoShootThread then coroutine.close(autoShootThread) end
         autoShootThread = nil
     end
-end
-
--- ===== УБИТЬ ВСЕХ =====
-local function killAllInstant()
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character then
-            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum.Health = 0 end
-        end
-    end
-    print("Все убиты!")
 end
 
 -- ===== ВЫСОКИЙ ПРЫЖОК =====
@@ -300,7 +274,6 @@ local function toggleFly(state)
 
         local conn = RunService.Heartbeat:Connect(updateFly)
         table.insert(flyConnections, conn)
-
     else
         hum.PlatformStand = false
         setNoclip(false)
@@ -326,7 +299,7 @@ local function autoFarmLoop()
 end
 
 -- ============================================================
--- ========== ПРОСТОЙ ГРАФИЧЕСКИЙ ИНТЕРФЕЙС ==========
+-- ========== ГРАФИЧЕСКИЙ ИНТЕРФЕЙС ==========
 -- ============================================================
 
 local screenGui = Instance.new("ScreenGui")
@@ -335,8 +308,8 @@ screenGui.Parent = LocalPlayer.PlayerGui
 
 -- Главное окно
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 300, 0, 500)
-mainFrame.Position = UDim2.new(0.5, -150, 0.5, -250)
+mainFrame.Size = UDim2.new(0, 320, 0, 520)
+mainFrame.Position = UDim2.new(0.5, -160, 0.5, -260)
 mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
 mainFrame.BackgroundTransparency = 0.1
 mainFrame.BorderSizePixel = 0
@@ -355,12 +328,12 @@ title.Font = Enum.Font.GothamBold
 title.BorderSizePixel = 0
 title.Parent = mainFrame
 
--- Кнопка свернуть
+-- Кнопка свернуть (-)
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
 minimizeBtn.Position = UDim2.new(1, -65, 0, 3)
 minimizeBtn.BackgroundColor3 = Color3.fromRGB(200, 200, 50)
-minimizeBtn.Text = "_"
+minimizeBtn.Text = "−"
 minimizeBtn.TextColor3 = Color3.new(1, 1, 1)
 minimizeBtn.TextScaled = true
 minimizeBtn.BorderSizePixel = 0
@@ -371,12 +344,12 @@ minimizeBtn.MouseButton1Click:Connect(function()
     restoreBtn.Visible = true
 end)
 
--- Кнопка закрыть
+-- Кнопка закрыть (X)
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.new(0, 30, 0, 30)
 closeBtn.Position = UDim2.new(1, -32, 0, 3)
 closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-closeBtn.Text = "X"
+closeBtn.Text = "✕"
 closeBtn.TextColor3 = Color3.new(1, 1, 1)
 closeBtn.TextScaled = true
 closeBtn.BorderSizePixel = 0
@@ -385,9 +358,9 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
--- Кнопка восстановления
+-- Кнопка восстановления (+)
 local restoreBtn = Instance.new("TextButton")
-restoreBtn.Size = UDim2.new(0, 45, 0, 45)
+restoreBtn.Size = UDim2.new(0, 50, 0, 50)
 restoreBtn.Position = UDim2.new(0, 10, 0, 10)
 restoreBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 restoreBtn.Text = "🔪"
@@ -410,7 +383,7 @@ tabFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
 tabFrame.BorderSizePixel = 0
 tabFrame.Parent = mainFrame
 
-local tabs = {"Главная", "ESP", "Телепорт", "Фарм", "Бой", "Полет"}
+local tabs = {"Главная", "ESP", "Телепорты", "Фарм", "Бой", "Полет"}
 local tabButtons = {}
 
 -- Контент
@@ -429,7 +402,9 @@ contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 contentLayout.Padding = UDim.new(0, 5)
 contentLayout.Parent = contentFrame
 
--- Функции создания элементов
+-- ===== ФУНКЦИИ СОЗДАНИЯ ЭЛЕМЕНТОВ =====
+
+-- Кнопка
 local function createButton(text, callback, color, order)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -10, 0, 32)
@@ -442,9 +417,16 @@ local function createButton(text, callback, color, order)
     btn.LayoutOrder = order or 0
     btn.Parent = contentFrame
     btn.MouseButton1Click:Connect(callback)
+    btn.MouseEnter:Connect(function()
+        btn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    end)
+    btn.MouseLeave:Connect(function()
+        btn.BackgroundColor3 = color or Color3.fromRGB(60, 60, 80)
+    end)
     return btn
 end
 
+-- Переключатель
 local function createToggle(text, initialState, callback, order)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, -10, 0, 32)
@@ -552,48 +534,106 @@ local function createSlider(text, minVal, maxVal, defaultVal, callback, order)
     return frame
 end
 
--- Очистка
+-- ===== ПОСТРОЕНИЕ ВКЛАДОК =====
 local function clearContent()
     for _, child in pairs(contentFrame:GetChildren()) do
         if child ~= contentLayout then child:Destroy() end
     end
 end
 
--- Переключение вкладок
 local function switchTab(tabName)
     clearContent()
     
     if tabName == "Главная" then
-        createToggle("Noclip", false, setNoclip, 1)
-        createButton("Speed x2", function()
+        createToggle("Noclip (проход сквозь стены)", false, setNoclip, 1)
+        createButton("⚡ Ускорение (Speed x2)", function()
             local hum = character:FindFirstChildOfClass("Humanoid")
             if hum then hum.WalkSpeed = hum.WalkSpeed * 2 end
+            print("⚡ Скорость увеличена")
         end, Color3.fromRGB(70, 70, 100), 2)
-        createButton("Убить всех", killAllInstant, Color3.fromRGB(200, 40, 40), 3)
-        createButton("Обновить ESP", function() if espEnabled then updateESP() end end, Color3.fromRGB(60, 120, 60), 4)
+        createButton("💀 Убить всех мгновенно", killAll, Color3.fromRGB(200, 40, 40), 3)
+        createButton("🔄 Обновить ESP", function() if espEnabled then updateESP() end end, Color3.fromRGB(60, 120, 60), 4)
 
     elseif tabName == "ESP" then
-        createToggle("ESP", false, function(state) espEnabled = state; updateESP() end, 1)
-        createButton("Обновить", function() if espEnabled then updateESP() end end, Color3.fromRGB(50, 80, 150), 2)
+        createToggle("🔍 Включить ESP", false, function(state)
+            espEnabled = state
+            updateESP()
+            print(state and "✅ ESP включен" or "❌ ESP выключен")
+        end, 1)
+        createButton("🔄 Обновить подсветку", function()
+            if espEnabled then updateESP() end
+            print("🔄 ESP обновлен")
+        end, Color3.fromRGB(50, 80, 150), 2)
 
-    elseif tabName == "Телепорт" then
-        createButton("К оружию", teleportToWeapon, Color3.fromRGB(200, 150, 50), 1)
-        createButton("К шерифу", function() teleportToRole("Sheriff") end, Color3.fromRGB(50, 100, 255), 2)
-        createButton("К убийце", function() teleportToRole("Murderer") end, Color3.fromRGB(255, 50, 50), 3)
+    elseif tabName == "Телепорты" then
+        createButton("🔫 К оружию", teleportToWeapon, Color3.fromRGB(200, 150, 50), 1)
+        createButton("👮 К шерифу", function() teleportToRole("Sheriff") end, Color3.fromRGB(50, 100, 255), 2)
+        createButton("🔪 К убийце", function() teleportToRole("Murderer") end, Color3.fromRGB(255, 50, 50), 3)
+        createButton("📋 К игроку (список)", function()
+            local dialog = Instance.new("Frame")
+            dialog.Size = UDim2.new(0, 250, 0, 300)
+            dialog.Position = UDim2.new(0.5, -125, 0.5, -150)
+            dialog.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+            dialog.BorderSizePixel = 0
+            dialog.Active = true
+            dialog.Parent = screenGui
+
+            local title2 = Instance.new("TextLabel", dialog)
+            title2.Size = UDim2.new(1, 0, 0, 30)
+            title2.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+            title2.Text = "Выберите игрока"
+            title2.TextColor3 = Color3.new(1,1,1)
+            title2.TextScaled = true
+
+            local list = Instance.new("ScrollingFrame", dialog)
+            list.Size = UDim2.new(1, -10, 1, -50)
+            list.Position = UDim2.new(0, 5, 0, 35)
+            list.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+            list.BorderSizePixel = 0
+            list.ScrollBarThickness = 4
+
+            local layout = Instance.new("UIListLayout", list)
+            layout.SortOrder = Enum.SortOrder.LayoutOrder
+            layout.Padding = UDim.new(0, 2)
+
+            for _, plr in pairs(Players:GetPlayers()) do
+                local btn = Instance.new("TextButton", list)
+                btn.Size = UDim2.new(1, 0, 0, 30)
+                btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+                btn.Text = plr.Name
+                btn.TextColor3 = Color3.new(1,1,1)
+                btn.TextScaled = true
+                btn.MouseButton1Click:Connect(function()
+                    teleportToPlayer(plr.Name)
+                    dialog:Destroy()
+                end)
+            end
+
+            local closeDlg = Instance.new("TextButton", dialog)
+            closeDlg.Size = UDim2.new(0, 30, 0, 30)
+            closeDlg.Position = UDim2.new(1, -35, 0, 0)
+            closeDlg.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            closeDlg.Text = "X"
+            closeDlg.TextColor3 = Color3.new(1,1,1)
+            closeDlg.TextScaled = true
+            closeDlg.MouseButton1Click:Connect(function() dialog:Destroy() end)
+        end, Color3.fromRGB(100, 100, 200), 4)
 
     elseif tabName == "Фарм" then
-        createToggle("Автофарм", false, function(state)
+        createToggle("💰 Авто-фарм монет", false, function(state)
             farming = state
             if farming then
                 if farmThread then coroutine.close(farmThread) end
                 farmThread = coroutine.create(autoFarmLoop)
                 coroutine.resume(farmThread)
+                print("💰 Автофарм включен")
             else
                 if farmThread then coroutine.close(farmThread) end
                 farmThread = nil
+                print("💰 Автофарм выключен")
             end
         end, 1)
-        createButton("К монете", function()
+        createButton("🪙 К ближайшей монете", function()
             local coins = findCoins()
             if #coins > 0 then
                 local hrp = character:FindFirstChild("HumanoidRootPart")
@@ -609,37 +649,27 @@ local function switchTab(tabName)
         end, Color3.fromRGB(200, 180, 50), 2)
 
     elseif tabName == "Бой" then
-        createButton("УМНАЯ АТАКА", smartAttack, Color3.fromRGB(200, 50, 50), 1)
-        createButton("Шериф → убить убийцу", function()
-            for _, plr in pairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer and getRole(plr) == "Murderer" and plr.Character then
-                    local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-                    if hum then hum.Health = 0 end
-                    return
-                end
+        createButton("🔫 ШОТ МАРДЕР (для шерифа)", shootMurderer, Color3.fromRGB(50, 150, 255), 1)
+        createButton("🔪 Убийца → убить всех", function()
+            if getRole(LocalPlayer) == "Murderer" then
+                killAll()
+            else
+                print("❌ Вы не убийца!")
             end
-        end, Color3.fromRGB(50, 150, 255), 2)
-        createButton("Убийца → убить всех", function()
-            for _, plr in pairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer and plr.Character then
-                    local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-                    if hum then hum.Health = 0 end
-                end
-            end
-        end, Color3.fromRGB(255, 50, 50), 3)
-        createToggle("Автострельба", false, toggleAutoShoot, 4)
-        createToggle("Высокий прыжок", false, setHighJump, 5)
-        createButton("Флинг всех", function()
-            for _, plr in pairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer and plr.Character then
-                    flingPlayer(plr)
-                end
-            end
-        end, Color3.fromRGB(150, 50, 200), 6)
+        end, Color3.fromRGB(255, 50, 50), 2)
+        createButton("🌀 Флинг всех", flingAll, Color3.fromRGB(150, 50, 200), 3)
+        createSlider("💥 Сила флинга", 1000, 15000, flingPower, function(val) flingPower = val end, 4)
+        createToggle("🎯 Авто-стрельба (шериф)", false, toggleAutoShoot, 5)
+        createToggle("🦘 Высокий прыжок (x3)", false, setHighJump, 6)
 
     elseif tabName == "Полет" then
-        createToggle("Полет", false, toggleFly, 1)
-        createSlider("Скорость", 10, 200, flySpeed, function(val) flySpeed = val end, 2)
+        createToggle("✈️ Режим полёта", false, function(state)
+            toggleFly(state)
+            print(state and "✈️ Полет включен" or "✈️ Полет выключен")
+        end, 1)
+        createSlider("🚀 Скорость полёта", 10, 200, flySpeed, function(val)
+            flySpeed = val
+        end, 2)
     end
     
     wait()
@@ -676,4 +706,5 @@ end
 switchTab("Главная")
 tabButtons[1].BackgroundColor3 = Color3.fromRGB(90, 90, 120)
 
-print("✅ MM2 HUB загружен!")
+print("✅ MM2 ULTIMATE HUB загружен!")
+print("🔪 Все функции готовы к работе!")
