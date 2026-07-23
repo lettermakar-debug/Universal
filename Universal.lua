@@ -1,14 +1,15 @@
--- MM2 Universal Hub (полная версия)
+-- MM2 Ultimate Hub (с полётом, свертыванием, телепортами)
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 
 local player = LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local mouse = player:GetMouse()
 
--- ===== ПЕРЕМЕННЫЕ СОСТОЯНИЯ =====
+-- ===== ПЕРЕМЕННЫЕ =====
 local espEnabled = false
 local noclipEnabled = false
 local farming = false
@@ -16,6 +17,11 @@ local farmThread = nil
 local highJump = false
 local espHighlights = {}
 local guiMinimized = false
+local flyEnabled = false
+local flySpeed = 50
+local flyBodyVelocity = nil
+local flyBodyGyro = nil
+local flyConnections = {}
 
 -- ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 local function getRole(plr)
@@ -68,9 +74,7 @@ end
 -- ===== ESP =====
 local function updateESP()
     for _, hl in pairs(espHighlights) do
-        if hl and hl.Parent then
-            hl:Destroy()
-        end
+        if hl and hl.Parent then hl:Destroy() end
     end
     espHighlights = {}
     if not espEnabled then return end
@@ -99,49 +103,47 @@ local function updateESP()
     end
 end
 
--- Автообновление ESP при появлении игроков
 Players.PlayerAdded:Connect(function(plr)
     plr.CharacterAdded:Connect(function()
-        if espEnabled then
-            wait(0.5)
-            updateESP()
-        end
+        if espEnabled then wait(0.5) updateESP() end
     end)
 end)
 
 -- ===== ТЕЛЕПОРТЫ =====
-local function teleportToWeapon()
-    local weapon = findWeapon()
-    if weapon then teleportTo(weapon) else print("Оружие не найдено") end
-end
-
+local function teleportToWeapon() local w = findWeapon() if w then teleportTo(w) else print("Оружие не найдено") end end
 local function teleportToRole(roleName)
     for _, plr in pairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
             local role = getRole(plr)
-            if role == roleName and plr.Character then
-                teleportTo(plr.Character)
-                return
-            end
+            if role == roleName and plr.Character then teleportTo(plr.Character) return end
         end
     end
     print(roleName .. " не найден")
 end
 
--- ===== АТАКА =====
+-- Телепорт к выбранному игроку (создаём диалог выбора)
+local function teleportToPlayer(plrName)
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr.Name == plrName and plr.Character then
+            teleportTo(plr.Character)
+            return
+        end
+    end
+    print("Игрок не найден")
+end
+
+-- ===== УМНАЯ АТАКА =====
 local function smartAttack()
     local myRole = getRole(LocalPlayer)
     if myRole == "Murderer" then
-        -- Убить всех
         for _, plr in pairs(Players:GetPlayers()) do
             if plr ~= LocalPlayer and plr.Character then
                 local hum = plr.Character:FindFirstChildOfClass("Humanoid")
                 if hum then hum.Health = 0 end
             end
         end
-        print("Все убиты (вы убийца)")
+        print("Все убиты")
     elseif myRole == "Sheriff" then
-        -- Найти убийцу и убить
         for _, plr in pairs(Players:GetPlayers()) do
             if plr ~= LocalPlayer and getRole(plr) == "Murderer" and plr.Character then
                 local hum = plr.Character:FindFirstChildOfClass("Humanoid")
@@ -152,7 +154,6 @@ local function smartAttack()
         end
         print("Убийца не найден")
     else
-        -- Невинный – просто телепорт к убийце
         for _, plr in pairs(Players:GetPlayers()) do
             if plr ~= LocalPlayer and getRole(plr) == "Murderer" and plr.Character then
                 teleportTo(plr.Character)
@@ -168,24 +169,18 @@ end
 local function setHighJump(state)
     highJump = state
     local hum = character:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.JumpPower = state and 150 or 50 -- стандарт 50, увеличиваем в 3 раза
-    end
+    if hum then hum.JumpPower = state and 150 or 50 end
 end
 
 -- ===== НОКЛИП =====
 local function setNoclip(state)
     noclipEnabled = state
     for _, part in pairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = not state
-        end
+        if part:IsA("BasePart") then part.CanCollide = not state end
     end
     if state then
         local function noclipPart(part)
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
+            if part:IsA("BasePart") then part.CanCollide = false end
         end
         character.DescendantAdded:Connect(noclipPart)
         if not getgenv()._noclipConn then
@@ -197,10 +192,99 @@ local function setNoclip(state)
             getgenv()._noclipConn = nil
         end
         for _, part in pairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = true
+            if part:IsA("BasePart") then part.CanCollide = true end
+        end
+    end
+end
+
+-- ===== ПОЛЁТ =====
+local function toggleFly(state)
+    flyEnabled = state
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    local hum = character:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    -- Удаляем старые объекты полёта
+    if flyBodyVelocity then flyBodyVelocity:Destroy() flyBodyVelocity = nil end
+    if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
+    for _, conn in pairs(flyConnections) do conn:Disconnect() end
+    flyConnections = {}
+
+    if state then
+        -- Включаем режим полёта
+        hum.PlatformStand = true
+        setNoclip(true) -- включаем ноклип
+
+        -- Создаём BodyVelocity и BodyGyro для управления
+        flyBodyVelocity = Instance.new("BodyVelocity")
+        flyBodyVelocity.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+        flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        flyBodyVelocity.Parent = hrp
+
+        flyBodyGyro = Instance.new("BodyGyro")
+        flyBodyGyro.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+        flyBodyGyro.CFrame = hrp.CFrame
+        flyBodyGyro.Parent = hrp
+
+        -- Обработка ввода для управления
+        local function onInputBegan(input, gameProcessed)
+            if gameProcessed then return end
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                local key = input.KeyCode
+                if key == Enum.KeyCode.W or key == Enum.KeyCode.A or key == Enum.KeyCode.S or key == Enum.KeyCode.D or key == Enum.KeyCode.Space or key == Enum.KeyCode.LeftShift then
+                    -- Обновляем скорость в каждом кадре
+                end
             end
         end
+
+        local function onInputEnded(input, gameProcessed)
+            if gameProcessed then return end
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                local key = input.KeyCode
+                if key == Enum.KeyCode.W or key == Enum.KeyCode.A or key == Enum.KeyCode.S or key == Enum.KeyCode.D or key == Enum.KeyCode.Space or key == Enum.KeyCode.LeftShift then
+                    -- Останавливаем движение по оси, если отпущена клавиша
+                end
+            end
+        end
+
+        UserInputService.InputBegan:Connect(onInputBegan)
+        UserInputService.InputEnded:Connect(onInputEnded)
+
+        -- Основной цикл обновления скорости
+        local function updateFly()
+            if not flyEnabled then return end
+            local moveDirection = Vector3.new(0, 0, 0)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDirection = moveDirection + hrp.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDirection = moveDirection - hrp.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDirection = moveDirection - hrp.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDirection = moveDirection + hrp.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDirection = moveDirection + Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDirection = moveDirection - Vector3.new(0, 1, 0) end
+
+            if moveDirection.Magnitude > 0 then
+                moveDirection = moveDirection.Unit * flySpeed
+            end
+            if flyBodyVelocity then
+                flyBodyVelocity.Velocity = moveDirection
+            end
+            -- Обновляем ориентацию (чтобы смотреть в направлении движения)
+            if moveDirection.Magnitude > 0 and flyBodyGyro then
+                flyBodyGyro.CFrame = CFrame.new(hrp.Position, hrp.Position + moveDirection.Unit)
+            end
+        end
+
+        -- Подключаем к RunService
+        local conn = RunService.Heartbeat:Connect(updateFly)
+        table.insert(flyConnections, conn)
+
+    else
+        -- Выключаем полёт
+        hum.PlatformStand = false
+        setNoclip(false)
+        if flyBodyVelocity then flyBodyVelocity:Destroy() flyBodyVelocity = nil end
+        if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
+        for _, conn in pairs(flyConnections) do conn:Disconnect() end
+        flyConnections = {}
     end
 end
 
@@ -220,13 +304,13 @@ end
 
 -- ========== ГРАФИЧЕСКИЙ ИНТЕРФЕЙС ==========
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "MM2UniversalHub"
+screenGui.Name = "MM2UltimateHub"
 screenGui.Parent = LocalPlayer.PlayerGui
 
 -- Главное окно
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 350, 0, 550)
-mainFrame.Position = UDim2.new(0.5, -175, 0.5, -275)
+mainFrame.Size = UDim2.new(0, 380, 0, 600)
+mainFrame.Position = UDim2.new(0.5, -190, 0.5, -300)
 mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
 mainFrame.BackgroundTransparency = 0.1
 mainFrame.BorderSizePixel = 0
@@ -238,14 +322,14 @@ mainFrame.Parent = screenGui
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 40)
 title.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-title.Text = "🔪 MM2 Universal Hub"
+title.Text = "🔪 MM2 Ultimate Hub"
 title.TextColor3 = Color3.new(1, 1, 1)
 title.TextScaled = true
 title.Font = Enum.Font.GothamBold
 title.BorderSizePixel = 0
 title.Parent = mainFrame
 
--- Кнопки заголовка (свернуть и закрыть)
+-- Кнопки заголовка
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
 minimizeBtn.Position = UDim2.new(1, -70, 0, 5)
@@ -274,11 +358,11 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
--- Кнопка восстановления (появляется, когда окно свёрнуто)
+-- Кнопка восстановления (всегда видна, когда окно скрыто)
 local restoreBtn = Instance.new("TextButton")
-restoreBtn.Size = UDim2.new(0, 40, 0, 40)
+restoreBtn.Size = UDim2.new(0, 50, 0, 50)
 restoreBtn.Position = UDim2.new(0, 10, 0, 10)
-restoreBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+restoreBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 restoreBtn.Text = "🔪"
 restoreBtn.TextColor3 = Color3.new(1, 1, 1)
 restoreBtn.TextScaled = true
@@ -299,7 +383,7 @@ tabFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
 tabFrame.BorderSizePixel = 0
 tabFrame.Parent = mainFrame
 
-local tabs = {"Основное", "ESP", "Телепорты", "Фарм", "Атака"}
+local tabs = {"Основное", "ESP", "Телепорты", "Фарм", "Атака", "Полет"}
 local tabButtons = {}
 local currentTab = "Основное"
 
@@ -319,7 +403,7 @@ contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 contentLayout.Padding = UDim.new(0, 5)
 contentLayout.Parent = contentFrame
 
--- Функции создания элементов GUI
+-- Функции создания элементов
 local function createButton(text, callback, color, order)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -10, 0, 35)
@@ -332,12 +416,8 @@ local function createButton(text, callback, color, order)
     btn.LayoutOrder = order or 0
     btn.Parent = contentFrame
     btn.MouseButton1Click:Connect(callback)
-    btn.MouseEnter:Connect(function()
-        btn.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
-    end)
-    btn.MouseLeave:Connect(function()
-        btn.BackgroundColor3 = color or Color3.fromRGB(60, 60, 80)
-    end)
+    btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(80, 80, 100) end)
+    btn.MouseLeave:Connect(function() btn.BackgroundColor3 = color or Color3.fromRGB(60, 60, 80) end)
     return btn
 end
 
@@ -350,7 +430,7 @@ local function createToggle(text, initialState, callback, order)
     frame.Parent = contentFrame
 
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.8, 0, 1, 0)
+    label.Size = UDim2.new(0.7, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Text = text
     label.TextColor3 = Color3.new(1, 1, 1)
@@ -379,12 +459,86 @@ local function createToggle(text, initialState, callback, order)
     return frame
 end
 
+-- Функция создания ползунка (Slider)
+local function createSlider(text, minVal, maxVal, defaultVal, callback, order)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -10, 0, 50)
+    frame.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
+    frame.BorderSizePixel = 0
+    frame.LayoutOrder = order or 0
+    frame.Parent = contentFrame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0, 20)
+    label.BackgroundTransparency = 1
+    label.Text = text .. ": " .. tostring(defaultVal)
+    label.TextColor3 = Color3.new(1, 1, 1)
+    label.TextScaled = true
+    label.Font = Enum.Font.Gotham
+    label.Parent = frame
+
+    local sliderFrame = Instance.new("Frame")
+    sliderFrame.Size = UDim2.new(1, 0, 0, 20)
+    sliderFrame.Position = UDim2.new(0, 0, 0, 22)
+    sliderFrame.BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+    sliderFrame.BorderSizePixel = 0
+    sliderFrame.Parent = frame
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new((defaultVal - minVal) / (maxVal - minVal), 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+    fill.BorderSizePixel = 0
+    fill.Parent = sliderFrame
+
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(0, 20, 1, -4)
+    button.Position = UDim2.new((defaultVal - minVal) / (maxVal - minVal), -10, 0, 2)
+    button.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    button.Text = ""
+    button.BorderSizePixel = 1
+    button.Parent = sliderFrame
+
+    local dragging = false
+    button.MouseButton1Down:Connect(function()
+        dragging = true
+    end)
+    button.MouseButton1Up:Connect(function()
+        dragging = false
+    end)
+    button.MouseLeave:Connect(function()
+        dragging = false
+    end)
+
+    local function updateSlider(x)
+        local relX = math.clamp((x - sliderFrame.AbsolutePosition.X) / sliderFrame.AbsoluteSize.X, 0, 1)
+        local val = minVal + relX * (maxVal - minVal)
+        val = math.round(val / 1) * 1 -- округление до целого
+        fill.Size = UDim2.new(relX, 0, 1, 0)
+        button.Position = UDim2.new(relX, -10, 0, 2)
+        label.Text = text .. ": " .. tostring(val)
+        callback(val)
+    end
+
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and dragging then
+            updateSlider(input.Position.X)
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+            updateSlider(input.Position.X)
+        end
+    end)
+
+    return frame
+end
+
 -- Очистка контента
 local function clearContent()
     for _, child in pairs(contentFrame:GetChildren()) do
-        if child ~= contentLayout then
-            child:Destroy()
-        end
+        if child ~= contentLayout then child:Destroy() end
     end
 end
 
@@ -398,23 +552,67 @@ local function switchTab(tabName)
             local hum = character:FindFirstChildOfClass("Humanoid")
             if hum then hum.WalkSpeed = hum.WalkSpeed * 2 end
         end, Color3.fromRGB(70, 70, 100), 2)
-        createButton("Обновить ESP", function()
-            if espEnabled then updateESP() end
-        end, Color3.fromRGB(60, 100, 60), 3)
+        createButton("Обновить ESP", function() if espEnabled then updateESP() end end, Color3.fromRGB(60, 100, 60), 3)
 
     elseif tabName == "ESP" then
-        createToggle("Включить ESP", false, function(state)
-            espEnabled = state
-            updateESP()
-        end, 1)
-        createButton("Обновить подсветку", function()
-            if espEnabled then updateESP() end
-        end, Color3.fromRGB(50, 80, 120), 2)
+        createToggle("Включить ESP", false, function(state) espEnabled = state; updateESP() end, 1)
+        createButton("Обновить подсветку", function() if espEnabled then updateESP() end end, Color3.fromRGB(50, 80, 120), 2)
 
     elseif tabName == "Телепорты" then
         createButton("Телепорт к оружию", teleportToWeapon, Color3.fromRGB(200, 150, 50), 1)
         createButton("Телепорт к шерифу", function() teleportToRole("Sheriff") end, Color3.fromRGB(50, 100, 255), 2)
         createButton("Телепорт к убийце", function() teleportToRole("Murderer") end, Color3.fromRGB(255, 50, 50), 3)
+        createButton("Выбрать игрока для телепорта", function()
+            -- Создаём простой диалог выбора
+            local dialog = Instance.new("Frame")
+            dialog.Size = UDim2.new(0, 250, 0, 300)
+            dialog.Position = UDim2.new(0.5, -125, 0.5, -150)
+            dialog.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+            dialog.BorderSizePixel = 0
+            dialog.Active = true
+            dialog.Parent = screenGui
+
+            local title2 = Instance.new("TextLabel", dialog)
+            title2.Size = UDim2.new(1, 0, 0, 30)
+            title2.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+            title2.Text = "Выберите игрока"
+            title2.TextColor3 = Color3.new(1,1,1)
+            title2.TextScaled = true
+
+            local list = Instance.new("ScrollingFrame", dialog)
+            list.Size = UDim2.new(1, -10, 1, -50)
+            list.Position = UDim2.new(0, 5, 0, 35)
+            list.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+            list.BorderSizePixel = 0
+            list.ScrollBarThickness = 4
+
+            local layout = Instance.new("UIListLayout", list)
+            layout.SortOrder = Enum.SortOrder.LayoutOrder
+            layout.Padding = UDim.new(0, 2)
+
+            for _, plr in pairs(Players:GetPlayers()) do
+                local btn = Instance.new("TextButton", list)
+                btn.Size = UDim2.new(1, 0, 0, 30)
+                btn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+                btn.Text = plr.Name
+                btn.TextColor3 = Color3.new(1,1,1)
+                btn.TextScaled = true
+                btn.MouseButton1Click:Connect(function()
+                    teleportToPlayer(plr.Name)
+                    dialog:Destroy()
+                end)
+            end
+
+            -- Кнопка закрытия
+            local closeDlg = Instance.new("TextButton", dialog)
+            closeDlg.Size = UDim2.new(0, 30, 0, 30)
+            closeDlg.Position = UDim2.new(1, -35, 0, 0)
+            closeDlg.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            closeDlg.Text = "X"
+            closeDlg.TextColor3 = Color3.new(1,1,1)
+            closeDlg.TextScaled = true
+            closeDlg.MouseButton1Click:Connect(function() dialog:Destroy() end)
+        end, Color3.fromRGB(100, 100, 200), 4)
 
     elseif tabName == "Фарм" then
         createToggle("Авто-фарм монет", false, function(state)
@@ -433,14 +631,10 @@ local function switchTab(tabName)
             if #coins > 0 then
                 local hrp = character:FindFirstChild("HumanoidRootPart")
                 if hrp then
-                    local nearest = nil
-                    local minDist = math.huge
+                    local nearest, minDist = nil, math.huge
                     for _, coin in pairs(coins) do
                         local dist = (coin.Position - hrp.Position).Magnitude
-                        if dist < minDist then
-                            minDist = dist
-                            nearest = coin
-                        end
+                        if dist < minDist then minDist = dist; nearest = coin end
                     end
                     if nearest then teleportTo(nearest) end
                 end
@@ -448,10 +642,8 @@ local function switchTab(tabName)
         end, Color3.fromRGB(200, 180, 50), 2)
 
     elseif tabName == "Атака" then
-        createButton("⚔️ Умная атака (убийца→всех, шериф→убийцу)", smartAttack, Color3.fromRGB(200, 50, 50), 1)
-        createToggle("Высокий прыжок (x3)", false, function(state)
-            setHighJump(state)
-        end, 2)
+        createButton("⚔️ Умная атака", smartAttack, Color3.fromRGB(200, 50, 50), 1)
+        createToggle("Высокий прыжок (x3)", false, setHighJump, 2)
         createButton("Телепорт к убийце и удар", function()
             for _, plr in pairs(Players:GetPlayers()) do
                 if plr ~= LocalPlayer and getRole(plr) == "Murderer" and plr.Character then
@@ -465,6 +657,14 @@ local function switchTab(tabName)
             end
             print("Убийца не найден")
         end, Color3.fromRGB(150, 50, 150), 3)
+
+    elseif tabName == "Полет" then
+        createToggle("Режим полёта", false, function(state)
+            toggleFly(state)
+        end, 1)
+        createSlider("Скорость полёта", 10, 200, flySpeed, function(val)
+            flySpeed = val
+        end, 2)
     end
     wait()
     contentFrame.CanvasSize = UDim2.new(0, 0, 0, contentLayout.AbsoluteContentSize.Y + 10)
@@ -500,4 +700,4 @@ end
 switchTab("Основное")
 tabButtons[1].BackgroundColor3 = Color3.fromRGB(90, 90, 120)
 
-print("✅ MM2 Universal Hub загружен! Наслаждайтесь.")
+print("✅ MM2 Ultimate Hub загружен! Наслаждайтесь.")
