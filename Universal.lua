@@ -1,4 +1,4 @@
--- MM2 Universal Script (как AtherHub)
+-- MM2 Universal Hub (полная версия)
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
@@ -8,14 +8,16 @@ local player = LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local mouse = player:GetMouse()
 
--- Переменные состояния
+-- ===== ПЕРЕМЕННЫЕ СОСТОЯНИЯ =====
 local espEnabled = false
 local noclipEnabled = false
 local farming = false
 local farmThread = nil
-local espHighlights = {} -- для хранения Highlight объектов
+local highJump = false
+local espHighlights = {}
+local guiMinimized = false
 
--- Вспомогательные функции
+-- ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
 local function getRole(plr)
     if plr:FindFirstChild("Murderer") and plr.Murderer.Value == true then
         return "Murderer"
@@ -27,23 +29,20 @@ local function getRole(plr)
 end
 
 local function teleportTo(target)
-    if not target or not target:IsA("BasePart") and not target:FindFirstChild("HumanoidRootPart") then
-        return
-    end
+    if not target then return end
     local hrp = character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
     local targetPos
     if target:IsA("BasePart") then
         targetPos = target.Position
+    elseif target:FindFirstChild("HumanoidRootPart") then
+        targetPos = target.HumanoidRootPart.Position
     else
-        local targetHrp = target:FindFirstChild("HumanoidRootPart")
-        if not targetHrp then return end
-        targetPos = targetHrp.Position
+        return
     end
     hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
 end
 
--- Поиск оружия на карте
 local function findWeapon()
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and (obj.Name:lower():match("gun") or obj.Name:lower():match("knife") or obj.Name:lower():match("pistol")) then
@@ -56,7 +55,6 @@ local function findWeapon()
     return nil
 end
 
--- Поиск монет
 local function findCoins()
     local coins = {}
     for _, obj in pairs(workspace:GetDescendants()) do
@@ -67,7 +65,7 @@ local function findCoins()
     return coins
 end
 
--- Функция обновления ESP
+-- ===== ESP =====
 local function updateESP()
     for _, hl in pairs(espHighlights) do
         if hl and hl.Parent then
@@ -75,9 +73,7 @@ local function updateESP()
         end
     end
     espHighlights = {}
-    
     if not espEnabled then return end
-    
     for _, plr in pairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer then
             local char = plr.Character
@@ -103,7 +99,7 @@ local function updateESP()
     end
 end
 
--- Подписка на появление новых игроков
+-- Автообновление ESP при появлении игроков
 Players.PlayerAdded:Connect(function(plr)
     plr.CharacterAdded:Connect(function()
         if espEnabled then
@@ -113,14 +109,10 @@ Players.PlayerAdded:Connect(function(plr)
     end)
 end)
 
--- Функции телепортов
+-- ===== ТЕЛЕПОРТЫ =====
 local function teleportToWeapon()
     local weapon = findWeapon()
-    if weapon then
-        teleportTo(weapon)
-    else
-        print("Оружие не найдено")
-    end
+    if weapon then teleportTo(weapon) else print("Оружие не найдено") end
 end
 
 local function teleportToRole(roleName)
@@ -133,36 +125,55 @@ local function teleportToRole(roleName)
             end
         end
     end
-    print(roleName .. " не найден на карте")
+    print(roleName .. " не найден")
 end
 
--- Kill All
-local function killAll()
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character then
-            local humanoid = plr.Character:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                humanoid.Health = 0
+-- ===== АТАКА =====
+local function smartAttack()
+    local myRole = getRole(LocalPlayer)
+    if myRole == "Murderer" then
+        -- Убить всех
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character then
+                local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+                if hum then hum.Health = 0 end
             end
         end
-    end
-end
-
--- Автофарм
-local function autoFarmLoop()
-    while farming do
-        local coins = findCoins()
-        if #coins > 0 then
-            teleportTo(coins[1])
-            wait(0.2)
-        else
-            wait(0.5)
+        print("Все убиты (вы убийца)")
+    elseif myRole == "Sheriff" then
+        -- Найти убийцу и убить
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and getRole(plr) == "Murderer" and plr.Character then
+                local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+                if hum then hum.Health = 0 end
+                print("Убийца уничтожен")
+                return
+            end
         end
-        wait(0.1)
+        print("Убийца не найден")
+    else
+        -- Невинный – просто телепорт к убийце
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and getRole(plr) == "Murderer" and plr.Character then
+                teleportTo(plr.Character)
+                print("Телепорт к убийце")
+                return
+            end
+        end
+        print("Убийца не найден")
     end
 end
 
--- Noclip
+-- ===== ВЫСОКИЙ ПРЫЖОК =====
+local function setHighJump(state)
+    highJump = state
+    local hum = character:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.JumpPower = state and 150 or 50 -- стандарт 50, увеличиваем в 3 раза
+    end
+end
+
+-- ===== НОКЛИП =====
 local function setNoclip(state)
     noclipEnabled = state
     for _, part in pairs(character:GetDescendants()) do
@@ -193,22 +204,29 @@ local function setNoclip(state)
     end
 end
 
--- Speed
-local function setSpeed(multiplier)
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if humanoid then
-        humanoid.WalkSpeed = humanoid.WalkSpeed * multiplier
+-- ===== АВТОФАРМ =====
+local function autoFarmLoop()
+    while farming do
+        local coins = findCoins()
+        if #coins > 0 then
+            teleportTo(coins[1])
+            wait(0.2)
+        else
+            wait(0.5)
+        end
+        wait(0.1)
     end
 end
 
--- ========== СОЗДАНИЕ GUI ==========
+-- ========== ГРАФИЧЕСКИЙ ИНТЕРФЕЙС ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "MM2UniversalHub"
 screenGui.Parent = LocalPlayer.PlayerGui
 
+-- Главное окно
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 350, 0, 500)
-mainFrame.Position = UDim2.new(0.5, -175, 0.5, -250)
+mainFrame.Size = UDim2.new(0, 350, 0, 550)
+mainFrame.Position = UDim2.new(0.5, -175, 0.5, -275)
 mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
 mainFrame.BackgroundTransparency = 0.1
 mainFrame.BorderSizePixel = 0
@@ -227,7 +245,22 @@ title.Font = Enum.Font.GothamBold
 title.BorderSizePixel = 0
 title.Parent = mainFrame
 
--- Кнопка закрытия
+-- Кнопки заголовка (свернуть и закрыть)
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+minimizeBtn.Position = UDim2.new(1, -70, 0, 5)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(200, 200, 50)
+minimizeBtn.Text = "—"
+minimizeBtn.TextColor3 = Color3.new(1, 1, 1)
+minimizeBtn.TextScaled = true
+minimizeBtn.BorderSizePixel = 0
+minimizeBtn.Parent = mainFrame
+minimizeBtn.MouseButton1Click:Connect(function()
+    guiMinimized = true
+    mainFrame.Visible = false
+    restoreBtn.Visible = true
+end)
+
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.new(0, 30, 0, 30)
 closeBtn.Position = UDim2.new(1, -35, 0, 5)
@@ -241,6 +274,23 @@ closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
+-- Кнопка восстановления (появляется, когда окно свёрнуто)
+local restoreBtn = Instance.new("TextButton")
+restoreBtn.Size = UDim2.new(0, 40, 0, 40)
+restoreBtn.Position = UDim2.new(0, 10, 0, 10)
+restoreBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+restoreBtn.Text = "🔪"
+restoreBtn.TextColor3 = Color3.new(1, 1, 1)
+restoreBtn.TextScaled = true
+restoreBtn.BorderSizePixel = 0
+restoreBtn.Visible = false
+restoreBtn.Parent = screenGui
+restoreBtn.MouseButton1Click:Connect(function()
+    guiMinimized = false
+    mainFrame.Visible = true
+    restoreBtn.Visible = false
+end)
+
 -- Вкладки
 local tabFrame = Instance.new("Frame")
 tabFrame.Size = UDim2.new(1, 0, 0, 35)
@@ -249,7 +299,7 @@ tabFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
 tabFrame.BorderSizePixel = 0
 tabFrame.Parent = mainFrame
 
-local tabs = {"Основное", "ESP", "Телепорты", "Фарм"}
+local tabs = {"Основное", "ESP", "Телепорты", "Фарм", "Атака"}
 local tabButtons = {}
 local currentTab = "Основное"
 
@@ -269,7 +319,7 @@ contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 contentLayout.Padding = UDim.new(0, 5)
 contentLayout.Parent = contentFrame
 
--- Функция создания кнопки
+-- Функции создания элементов GUI
 local function createButton(text, callback, color, order)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -10, 0, 35)
@@ -291,7 +341,6 @@ local function createButton(text, callback, color, order)
     return btn
 end
 
--- Функция создания переключателя
 local function createToggle(text, initialState, callback, order)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, -10, 0, 35)
@@ -330,7 +379,7 @@ local function createToggle(text, initialState, callback, order)
     return frame
 end
 
--- Функция очистки контента
+-- Очистка контента
 local function clearContent()
     for _, child in pairs(contentFrame:GetChildren()) do
         if child ~= contentLayout then
@@ -339,24 +388,19 @@ local function clearContent()
     end
 end
 
--- Функция переключения вкладки
+-- Переключение вкладок
 local function switchTab(tabName)
     currentTab = tabName
     clearContent()
     if tabName == "Основное" then
-        createToggle("Noclip (проход сквозь стены)", false, function(state)
-            setNoclip(state)
-        end, 1)
-        
+        createToggle("Noclip (проход сквозь стены)", false, setNoclip, 1)
         createButton("Ускорение (Speed x2)", function()
-            setSpeed(2)
+            local hum = character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = hum.WalkSpeed * 2 end
         end, Color3.fromRGB(70, 70, 100), 2)
-        
-        createButton("Kill All (всех убить)", killAll, Color3.fromRGB(180, 40, 40), 3)
-        
         createButton("Обновить ESP", function()
             if espEnabled then updateESP() end
-        end, Color3.fromRGB(60, 100, 60), 4)
+        end, Color3.fromRGB(60, 100, 60), 3)
 
     elseif tabName == "ESP" then
         createToggle("Включить ESP", false, function(state)
@@ -402,6 +446,25 @@ local function switchTab(tabName)
                 end
             end
         end, Color3.fromRGB(200, 180, 50), 2)
+
+    elseif tabName == "Атака" then
+        createButton("⚔️ Умная атака (убийца→всех, шериф→убийцу)", smartAttack, Color3.fromRGB(200, 50, 50), 1)
+        createToggle("Высокий прыжок (x3)", false, function(state)
+            setHighJump(state)
+        end, 2)
+        createButton("Телепорт к убийце и удар", function()
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer and getRole(plr) == "Murderer" and plr.Character then
+                    teleportTo(plr.Character)
+                    wait(0.1)
+                    local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+                    if hum then hum.Health = 0 end
+                    print("Убийца убит")
+                    return
+                end
+            end
+            print("Убийца не найден")
+        end, Color3.fromRGB(150, 50, 150), 3)
     end
     wait()
     contentFrame.CanvasSize = UDim2.new(0, 0, 0, contentLayout.AbsoluteContentSize.Y + 10)
@@ -437,4 +500,4 @@ end
 switchTab("Основное")
 tabButtons[1].BackgroundColor3 = Color3.fromRGB(90, 90, 120)
 
-print("✅ MM2 Universal Hub loaded! Enjoy.")
+print("✅ MM2 Universal Hub загружен! Наслаждайтесь.")
