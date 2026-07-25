@@ -1,4 +1,4 @@
--- MM2 HUB UPDATE - ПОЛНАЯ РАБОЧАЯ ВЕРСИЯ
+-- MM2 HUB UPDATE - ПОЛНАЯ РАБОЧАЯ ВЕРСИЯ С СВЕРТЫВАНИЕМ
 -- Discord: discord.gg/v8ZPq4y2nD
 
 local Players = game:GetService("Players")
@@ -19,6 +19,7 @@ local speedEnabled = false
 local jumpEnabled = false
 local autoShootEnabled = false
 local knifeAuraEnabled = false
+local isMinimized = false
 local ESP_TEAM_COLORS = {
     Murderer = Color3.fromRGB(255, 0, 0),
     Sheriff = Color3.fromRGB(0, 100, 255),
@@ -204,10 +205,22 @@ local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 12)
 corner.Parent = mainFrame
 
+-- КНОПКА СВЕРТЫВАНИЯ (МИНИМИЗАЦИИ)
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+minimizeBtn.Position = UDim2.new(1, -70, 0, 5)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+minimizeBtn.Text = "━"
+minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+minimizeBtn.TextScaled = true
+minimizeBtn.BorderSizePixel = 0
+minimizeBtn.Parent = mainFrame
+
 -- ЗАГОЛОВОК
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 40)
-title.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+title.Size = UDim2.new(1, -110, 0, 40)
+title.Position = UDim2.new(0, 5, 0, 0)
+title.BackgroundTransparency = 1
 title.Text = "MM2 HUB UPDATE"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextScaled = true
@@ -225,6 +238,36 @@ closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 closeBtn.TextScaled = true
 closeBtn.BorderSizePixel = 0
 closeBtn.Parent = mainFrame
+
+-- КОНТЕЙНЕР ДЛЯ ВСЕХ ЭЛЕМЕНТОВ (КРОМЕ ЗАГОЛОВКА И КНОПОК)
+local contentContainer = Instance.new("Frame")
+contentContainer.Size = UDim2.new(1, 0, 1, -40)
+contentContainer.Position = UDim2.new(0, 0, 0, 40)
+contentContainer.BackgroundTransparency = 1
+contentContainer.Parent = mainFrame
+
+-- ФУНКЦИЯ СВЕРТЫВАНИЯ/РАЗВЕРТЫВАНИЯ
+local function toggleMinimize()
+    isMinimized = not isMinimized
+    
+    if isMinimized then
+        -- Свернуть
+        mainFrame:TweenSize(UDim2.new(0, 450, 0, 40), "Out", "Quad", 0.3, true)
+        contentContainer.Visible = false
+        minimizeBtn.Text = "□"
+        minimizeBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    else
+        -- Развернуть
+        mainFrame:TweenSize(UDim2.new(0, 450, 0, 600), "Out", "Quad", 0.3, true)
+        wait(0.35)
+        contentContainer.Visible = true
+        minimizeBtn.Text = "━"
+        minimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+    end
+end
+
+minimizeBtn.MouseButton1Click:Connect(toggleMinimize)
+
 closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
     clearESP()
@@ -240,7 +283,7 @@ local function createTab(name, y)
     tab.TextColor3 = Color3.fromRGB(255, 255, 255)
     tab.TextScaled = true
     tab.BorderSizePixel = 0
-    tab.Parent = mainFrame
+    tab.Parent = contentContainer
     return tab
 end
 
@@ -252,7 +295,7 @@ local function createSection(name, parent)
     section.BackgroundTransparency = 0.5
     section.BorderSizePixel = 0
     section.Visible = false
-    section.Parent = parent or mainFrame
+    section.Parent = parent or contentContainer
     
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1, 0, 0, 30)
@@ -328,20 +371,20 @@ end
 local tabs = {}
 local sections = {}
 
-local mainSection = createSection("Главная", mainFrame)
+local mainSection = createSection("Главная", contentContainer)
 tabs["Главная"] = mainSection
 mainSection.section.Visible = true
 
-local aimSection = createSection("Aim", mainFrame)
+local aimSection = createSection("Aim", contentContainer)
 tabs["Aim"] = aimSection
 
-local tpSection = createSection("Телепорты", mainFrame)
+local tpSection = createSection("Телепорты", contentContainer)
 tabs["Телепорты"] = tpSection
 
-local farmSection = createSection("Фарм", mainFrame)
+local farmSection = createSection("Фарм", contentContainer)
 tabs["Фарм"] = farmSection
 
-local miscSection = createSection("Разное", mainFrame)
+local miscSection = createSection("Разное", contentContainer)
 tabs["Разное"] = miscSection
 
 -- КНОПКИ ВКЛАДОК
@@ -521,6 +564,16 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
+-- ГОРЯЧАЯ КЛАВИША ДЛЯ СВЕРТЫВАНИЯ (Ctrl+M)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.M and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+        toggleMinimize()
+    end
+end)
+
 print("MM2 HUB UPDATE загружен!")
 print("Цвета ESP: Убийца - Красный, Шериф - Синий, Мирный - Зеленый")
 print("Ускорение x2 и супер прыжок включены!")
+print("Для свертывания нажмите кнопку '━' или Ctrl+M")
