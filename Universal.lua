@@ -1,4 +1,4 @@
--- MM2 HUB UPDATE - COMPLETE VERSION WITH GOD MODE & WORKING AUTO FARM
+-- MM2 HUB UPDATE - COMPLETE VERSION
 -- Discord: discord.gg/v8ZPq4y2nD
 
 local Players = game:GetService("Players")
@@ -25,14 +25,10 @@ local knifeAuraEnabled = false
 local isMinimized = false
 local autoFarmEnabled = false
 local antiFlingEnabled = false
-local godModeEnabled = false
 local teleportToPlayerEnabled = false
 local selectedPlayer = nil
 local flingTarget = nil
 local flingEnabled = false
-local farmLoop = nil
-local godModeLoop = nil
-local antiFlingLoop = nil
 
 -- ESP COLORS
 local ESP_TEAM_COLORS = {
@@ -181,23 +177,12 @@ local function getClosestCoin()
     return closest
 end
 
--- GET ALL COINS
-local function getAllCoins()
-    local coins = {}
-    for _, item in pairs(Workspace:GetDescendants()) do
-        if item:IsA("Part") and item.Name == "Coin" and item.Parent then
-            table.insert(coins, item)
-        end
-    end
-    return coins
-end
-
 -- TELEPORT FUNCTIONS
 local function teleportToPlayer(player)
     if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
         local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if root then
-            root.CFrame = player.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
+            root.CFrame = player.Character.HumanoidRootPart.CFrame
         end
     end
 end
@@ -205,7 +190,7 @@ end
 local function teleportToPosition(position)
     local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if root then
-        root.CFrame = CFrame.new(position + Vector3.new(0, 3, 0))
+        root.CFrame = CFrame.new(position)
     end
 end
 
@@ -244,46 +229,11 @@ local function setJumpPower(state)
     end
 end
 
--- GOD MODE
-local function toggleGodMode(state)
-    godModeEnabled = state
-    
-    if godModeLoop then
-        godModeLoop:Disconnect()
-        godModeLoop = nil
-    end
-    
-    if state then
-        godModeLoop = RunService.Heartbeat:Connect(function()
-            if godModeEnabled and LocalPlayer.Character then
-                local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
-                if humanoid then
-                    humanoid.Health = humanoid.MaxHealth
-                    humanoid.BreakJointsOnDeath = false
-                end
-                
-                -- Make character invincible
-                for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = true
-                    end
-                end
-            end
-        end)
-    end
-end
-
 -- ANTI FLING
 local function toggleAntiFling(state)
     antiFlingEnabled = state
-    
-    if antiFlingLoop then
-        antiFlingLoop:Disconnect()
-        antiFlingLoop = nil
-    end
-    
     if state then
-        antiFlingLoop = RunService.Heartbeat:Connect(function()
+        RunService.Heartbeat:Connect(function()
             if antiFlingEnabled and LocalPlayer.Character then
                 local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if root and root.Velocity and root.Velocity.Magnitude > 200 then
@@ -297,37 +247,13 @@ end
 -- AUTO FARM
 local function toggleAutoFarm(state)
     autoFarmEnabled = state
-    
-    if farmLoop then
-        farmLoop:Disconnect()
-        farmLoop = nil
-    end
-    
     if state then
-        farmLoop = RunService.Heartbeat:Connect(function()
+        RunService.Heartbeat:Connect(function()
             if autoFarmEnabled and LocalPlayer.Character then
-                local coins = getAllCoins()
-                if #coins > 0 then
-                    -- Teleport to each coin
-                    for _, coin in pairs(coins) do
-                        if coin and coin.Parent then
-                            local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                            if root then
-                                root.CFrame = CFrame.new(coin.Position + Vector3.new(0, 3, 0))
-                                wait(0.05)
-                            end
-                        end
-                    end
-                else
-                    -- If no coins found, move to random position
-                    local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                    if root then
-                        root.CFrame = CFrame.new(Vector3.new(
-                            math.random(-50, 50),
-                            10,
-                            math.random(-50, 50)
-                        ))
-                    end
+                local coin = getClosestCoin()
+                if coin then
+                    teleportToPosition(coin.Position)
+                    wait(0.1)
                 end
             end
         end)
@@ -343,8 +269,6 @@ local function flingPlayer(player)
         root.Velocity = Vector3.new(1000, 500, 1000)
         wait(0.1)
         root.Velocity = Vector3.new(-1000, 500, -1000)
-        wait(0.1)
-        root.Velocity = Vector3.new(0, 2000, 0)
     end
 end
 
@@ -436,8 +360,8 @@ screenGui.Name = "MM2HUBUPDATE"
 screenGui.Parent = game.CoreGui
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 550, 0, 720)
-mainFrame.Position = UDim2.new(0.5, -275, 0.5, -360)
+mainFrame.Size = UDim2.new(0, 550, 0, 700)
+mainFrame.Position = UDim2.new(0.5, -275, 0.5, -350)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 mainFrame.BackgroundTransparency = 0.1
 mainFrame.BorderSizePixel = 0
@@ -498,7 +422,7 @@ local function toggleMinimize()
         minimizeBtn.Text = "□"
         minimizeBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
     else
-        mainFrame:TweenSize(UDim2.new(0, 550, 0, 720), "Out", "Quad", 0.3, true)
+        mainFrame:TweenSize(UDim2.new(0, 550, 0, 700), "Out", "Quad", 0.3, true)
         wait(0.35)
         contentContainer.Visible = true
         minimizeBtn.Text = "━"
@@ -511,9 +435,6 @@ minimizeBtn.MouseButton1Click:Connect(toggleMinimize)
 closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
     clearESP()
-    if godModeLoop then godModeLoop:Disconnect() end
-    if farmLoop then farmLoop:Disconnect() end
-    if antiFlingLoop then antiFlingLoop:Disconnect() end
 end)
 
 -- CREATE TAB FUNCTION
@@ -533,7 +454,7 @@ end
 -- CREATE SECTION FUNCTION
 local function createSection(name, parent)
     local section = Instance.new("Frame")
-    section.Size = UDim2.new(1, -20, 0, 570)
+    section.Size = UDim2.new(1, -20, 0, 550)
     section.Position = UDim2.new(0, 10, 0, 80)
     section.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
     section.BackgroundTransparency = 0.5
@@ -588,7 +509,7 @@ local function createToggle(text, callback, parent)
     frame.Parent = parent.scroll
     
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.65, 0, 1, 0)
+    label.Size = UDim2.new(0.7, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Text = text
     label.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -714,10 +635,6 @@ end, mainSection)
 
 createToggle("Anti Fling", function(state)
     toggleAntiFling(state)
-end, mainSection)
-
-createToggle("God Mode", function(state)
-    toggleGodMode(state)
 end, mainSection)
 
 -- AIM TAB
@@ -932,4 +849,75 @@ RunService.Heartbeat:Connect(function()
             for _, player in pairs(Players:GetPlayers()) do
                 if player ~= LocalPlayer and player.Character then
                     local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
-                    if targetRoot and (root.Position - targetRoot.Position).Magnitude <
+                    if targetRoot and (root.Position - targetRoot.Position).Magnitude < 15 then
+                        player.Character.Humanoid.Health = 0
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Auto Shoot
+    if autoShootEnabled then
+        local target = getClosestPlayer()
+        if target and target.Character then
+            target.Character.Humanoid.Health = 0
+        end
+    end
+    
+    -- Update Speed
+    if speedEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        if LocalPlayer.Character.Humanoid.WalkSpeed ~= 32 then
+            LocalPlayer.Character.Humanoid.WalkSpeed = 32
+        end
+    end
+    
+    -- Update Jump
+    if jumpEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        if LocalPlayer.Character.Humanoid.JumpPower ~= 100 then
+            LocalPlayer.Character.Humanoid.JumpPower = 100
+        end
+    end
+end)
+
+-- UPDATE ESP ON NEW PLAYERS
+Players.PlayerAdded:Connect(function()
+    wait(1)
+    if espEnabled then updateESP() end
+end)
+
+-- UPDATE ESP COLORS ON ROLE CHANGE
+RunService.Heartbeat:Connect(function()
+    if espEnabled then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local role = getPlayerRole(player)
+                local color = ESP_TEAM_COLORS[role] or Color3.fromRGB(255, 255, 255)
+                for _, obj in pairs(espObjects) do
+                    if obj:IsA("BoxHandleAdornment") and obj.Adornee == player.Character:FindFirstChild("HumanoidRootPart") then
+                        obj.Color3 = color
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- HOTKEY FOR MINIMIZE
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.M and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+        toggleMinimize()
+    end
+end)
+
+print("MM2 HUB UPDATE Loaded Successfully!")
+print("✅ ESP: Murderer - Red, Sheriff - Blue, Innocent - Green")
+print("✅ Speed x2 and Super Jump")
+print("✅ Aimbot and Silent Aim")
+print("✅ Auto Farm Coins")
+print("✅ Anti Fling")
+print("✅ Teleport To Player Menu")
+print("✅ Fling Players")
+print("Press '━' or Ctrl+M to Minimize")
