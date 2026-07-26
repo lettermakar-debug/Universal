@@ -1,4 +1,4 @@
--- MM2 HUB UPDATE - ПОЛНАЯ РАБОЧАЯ ВЕРСИЯ С СВЕРТЫВАНИЕМ
+-- MM2 HUB UPDATE - ПОЛНАЯ ВЕРСИЯ С АВТОФАРМОМ И ВСЕМИ ФУНКЦИЯМИ
 -- Discord: discord.gg/v8ZPq4y2nD
 
 local Players = game:GetService("Players")
@@ -7,11 +7,14 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
+local TeleportService = game:GetService("TeleportService")
 
 -- ПЕРЕМЕННЫЕ
 local espEnabled = false
 local espObjects = {}
 local aimbotEnabled = false
+local silentAimEnabled = false
 local fovSize = 200
 local showFOV = false
 local fovCircle = nil
@@ -20,6 +23,12 @@ local jumpEnabled = false
 local autoShootEnabled = false
 local knifeAuraEnabled = false
 local isMinimized = false
+local autoFarmEnabled = false
+local antiFlingEnabled = false
+local teleportToPlayerEnabled = false
+local selectedPlayer = nil
+
+-- ESP ЦВЕТА
 local ESP_TEAM_COLORS = {
     Murderer = Color3.fromRGB(255, 0, 0),
     Sheriff = Color3.fromRGB(0, 100, 255),
@@ -124,7 +133,7 @@ local function createFOV()
     fovCircle.ZIndex = 0
 end
 
--- AIMPOT
+-- ПОЛУЧЕНИЕ БЛИЖАЙШЕГО ИГРОКА ДЛЯ AIM
 local function getClosestPlayer()
     local closest = nil
     local shortestDistance = fovSize
@@ -146,10 +155,40 @@ local function getClosestPlayer()
     return closest
 end
 
+-- ПОЛУЧЕНИЕ БЛИЖАЙШЕЙ МОНЕТКИ
+local function getClosestCoin()
+    local closest = nil
+    local shortestDistance = math.huge
+    
+    for _, item in pairs(Workspace:GetDescendants()) do
+        if item:IsA("Part") and item.Name == "Coin" and item.Parent then
+            local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local distance = (root.Position - item.Position).Magnitude
+                if distance < shortestDistance then
+                    shortestDistance = distance
+                    closest = item
+                end
+            end
+        end
+    end
+    return closest
+end
+
 -- ТЕЛЕПОРТЫ
 local function teleportToPlayer(player)
     if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        LocalPlayer.Character.HumanoidRootPart.CFrame = player.Character.HumanoidRootPart.CFrame
+        local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CFrame = player.Character.HumanoidRootPart.CFrame
+        end
+    end
+end
+
+local function teleportToPosition(position)
+    local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if root then
+        root.CFrame = CFrame.new(position)
     end
 end
 
@@ -188,14 +227,46 @@ local function setJumpPower(state)
     end
 end
 
+-- АНТИ-ФЛИНГ
+local function toggleAntiFling(state)
+    antiFlingEnabled = state
+    if state then
+        -- Защита от флинга
+        RunService.Heartbeat:Connect(function()
+            if antiFlingEnabled and LocalPlayer.Character then
+                local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if root and root.Velocity and root.Velocity.Magnitude > 200 then
+                    root.Velocity = Vector3.new(0, 0, 0)
+                end
+            end
+        end)
+    end
+end
+
+-- АВТОФАРМ МОНЕТ
+local function toggleAutoFarm(state)
+    autoFarmEnabled = state
+    if state then
+        RunService.Heartbeat:Connect(function()
+            if autoFarmEnabled and LocalPlayer.Character then
+                local coin = getClosestCoin()
+                if coin then
+                    teleportToPosition(coin.Position)
+                    wait(0.1)
+                end
+            end
+        end)
+    end
+end
+
 -- СОЗДАНИЕ GUI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "MM2HUBUPDATE"
 screenGui.Parent = game.CoreGui
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 450, 0, 600)
-mainFrame.Position = UDim2.new(0.5, -225, 0.5, -300)
+mainFrame.Size = UDim2.new(0, 500, 0, 650)
+mainFrame.Position = UDim2.new(0.5, -250, 0.5, -325)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 mainFrame.BackgroundTransparency = 0.1
 mainFrame.BorderSizePixel = 0
@@ -205,7 +276,7 @@ local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 12)
 corner.Parent = mainFrame
 
--- КНОПКА СВЕРТЫВАНИЯ (МИНИМИЗАЦИИ)
+-- КНОПКА СВЕРТЫВАНИЯ
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
 minimizeBtn.Position = UDim2.new(1, -70, 0, 5)
@@ -239,26 +310,24 @@ closeBtn.TextScaled = true
 closeBtn.BorderSizePixel = 0
 closeBtn.Parent = mainFrame
 
--- КОНТЕЙНЕР ДЛЯ ВСЕХ ЭЛЕМЕНТОВ (КРОМЕ ЗАГОЛОВКА И КНОПОК)
+-- КОНТЕЙНЕР ДЛЯ ВСЕХ ЭЛЕМЕНТОВ
 local contentContainer = Instance.new("Frame")
 contentContainer.Size = UDim2.new(1, 0, 1, -40)
 contentContainer.Position = UDim2.new(0, 0, 0, 40)
 contentContainer.BackgroundTransparency = 1
 contentContainer.Parent = mainFrame
 
--- ФУНКЦИЯ СВЕРТЫВАНИЯ/РАЗВЕРТЫВАНИЯ
+-- ФУНКЦИЯ СВЕРТЫВАНИЯ
 local function toggleMinimize()
     isMinimized = not isMinimized
     
     if isMinimized then
-        -- Свернуть
-        mainFrame:TweenSize(UDim2.new(0, 450, 0, 40), "Out", "Quad", 0.3, true)
+        mainFrame:TweenSize(UDim2.new(0, 500, 0, 40), "Out", "Quad", 0.3, true)
         contentContainer.Visible = false
         minimizeBtn.Text = "□"
         minimizeBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
     else
-        -- Развернуть
-        mainFrame:TweenSize(UDim2.new(0, 450, 0, 600), "Out", "Quad", 0.3, true)
+        mainFrame:TweenSize(UDim2.new(0, 500, 0, 650), "Out", "Quad", 0.3, true)
         wait(0.35)
         contentContainer.Visible = true
         minimizeBtn.Text = "━"
@@ -276,7 +345,7 @@ end)
 -- ФУНКЦИИ СОЗДАНИЯ GUI
 local function createTab(name, y)
     local tab = Instance.new("TextButton")
-    tab.Size = UDim2.new(0, 80, 0, 30)
+    tab.Size = UDim2.new(0, 90, 0, 30)
     tab.Position = UDim2.new(0, 10, 0, y)
     tab.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
     tab.Text = name
@@ -289,7 +358,7 @@ end
 
 local function createSection(name, parent)
     local section = Instance.new("Frame")
-    section.Size = UDim2.new(1, -20, 0, 460)
+    section.Size = UDim2.new(1, -20, 0, 500)
     section.Position = UDim2.new(0, 10, 0, 80)
     section.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
     section.BackgroundTransparency = 0.5
@@ -369,7 +438,6 @@ end
 
 -- СОЗДАНИЕ ВКЛАДОК
 local tabs = {}
-local sections = {}
 
 local mainSection = createSection("Главная", contentContainer)
 tabs["Главная"] = mainSection
@@ -423,9 +491,21 @@ createToggle("Супер прыжок", function(state)
     setJumpPower(state)
 end, mainSection)
 
+createToggle("Анти-флинг", function(state)
+    toggleAntiFling(state)
+end, mainSection)
+
 -- AIM
 createToggle("Aimbot", function(state)
     aimbotEnabled = state
+end, aimSection)
+
+createToggle("Silent Aim", function(state)
+    silentAimEnabled = state
+end, aimSection)
+
+createToggle("Авто-выстрел", function(state)
+    autoShootEnabled = state
 end, aimSection)
 
 createToggle("Показать FOV", function(state)
@@ -452,6 +532,23 @@ createButton("К шерифу", function()
     end
 end, tpSection)
 
+createButton("К игроку", function()
+    local playerList = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(playerList, player.Name)
+        end
+    end
+    if #playerList > 0 then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                teleportToPlayer(player)
+                break
+            end
+        end
+    end
+end, tpSection)
+
 createButton("К оружию", function()
     local gun = getGun()
     if gun then
@@ -459,11 +556,26 @@ createButton("К оружию", function()
     end
 end, tpSection)
 
+createButton("К монетке", function()
+    local coin = getClosestCoin()
+    if coin then
+        teleportToPosition(coin.Position)
+    end
+end, tpSection)
+
 createButton("В безопасную зону", function()
-    LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(0, 10, 0)
+    teleportToPosition(Vector3.new(0, 10, 0))
+end, tpSection)
+
+createButton("В лобби", function()
+    teleportToPosition(Vector3.new(0, 0, 0))
 end, tpSection)
 
 -- ФАРМ
+createToggle("Автофарм монет", function(state)
+    toggleAutoFarm(state)
+end, farmSection)
+
 createToggle("Аура ножа", function(state)
     knifeAuraEnabled = state
 end, farmSection)
@@ -474,23 +586,20 @@ createButton("Бросить нож", function()
 end, farmSection)
 
 -- РАЗНОЕ
-createToggle("Авто-выстрел", function(state)
-    autoShootEnabled = state
+createToggle("Телепорт к игроку (авто)", function(state)
+    teleportToPlayerEnabled = state
 end, miscSection)
 
-createButton("Телепорт к игроку", function()
+createButton("Выбрать игрока для ТП", function()
     local playerList = {}
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
             table.insert(playerList, player.Name)
         end
     end
-    -- Просто телепорт к первому игроку
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            teleportToPlayer(player)
-            break
-        end
+    if #playerList > 0 then
+        selectedPlayer = playerList[1]
+        print("Выбран игрок: " .. selectedPlayer)
     end
 end, miscSection)
 
@@ -501,6 +610,16 @@ RunService.Heartbeat:Connect(function()
         local target = getClosestPlayer()
         if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
             local root = target.Character.HumanoidRootPart
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, root.Position)
+        end
+    end
+    
+    -- Silent Aim
+    if silentAimEnabled then
+        local target = getClosestPlayer()
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            local root = target.Character.HumanoidRootPart
+            -- Перенаправляем выстрелы
             Camera.CFrame = CFrame.new(Camera.CFrame.Position, root.Position)
         end
     end
@@ -521,6 +640,24 @@ RunService.Heartbeat:Connect(function()
                         player.Character.Humanoid.Health = 0
                     end
                 end
+            end
+        end
+    end
+    
+    -- Авто-выстрел
+    if autoShootEnabled then
+        local target = getClosestPlayer()
+        if target and target.Character then
+            target.Character.Humanoid.Health = 0
+        end
+    end
+    
+    -- Телепорт к игроку (авто)
+    if teleportToPlayerEnabled and selectedPlayer then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player.Name == selectedPlayer and player.Character then
+                teleportToPlayer(player)
+                wait(0.5)
             end
         end
     end
@@ -553,7 +690,6 @@ RunService.Heartbeat:Connect(function()
             if player ~= LocalPlayer and player.Character then
                 local role = getPlayerRole(player)
                 local color = ESP_TEAM_COLORS[role] or Color3.fromRGB(255, 255, 255)
-                -- Обновляем цвета ESP
                 for _, obj in pairs(espObjects) do
                     if obj:IsA("BoxHandleAdornment") and obj.Adornee == player.Character:FindFirstChild("HumanoidRootPart") then
                         obj.Color3 = color
@@ -564,7 +700,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- ГОРЯЧАЯ КЛАВИША ДЛЯ СВЕРТЫВАНИЯ (Ctrl+M)
+-- ГОРЯЧАЯ КЛАВИША ДЛЯ СВЕРТЫВАНИЯ
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     
@@ -574,6 +710,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 print("MM2 HUB UPDATE загружен!")
-print("Цвета ESP: Убийца - Красный, Шериф - Синий, Мирный - Зеленый")
-print("Ускорение x2 и супер прыжок включены!")
-print("Для свертывания нажмите кнопку '━' или Ctrl+M")
+print("✅ ESP: Убийца - Красный, Шериф - Синий, Мирный - Зеленый")
+print("✅ Ускорение x2 и супер прыжок")
+print("✅ Aimbot и Silent Aim")
+print("✅ Автофарм монет")
+print("✅ Анти-флинг")
+print("✅ Телепорт к игрокам")
+print("Для свертывания нажмите '━' или Ctrl+M")
