@@ -1,4 +1,4 @@
--- MM2 HUB UPDATE - ПОЛНАЯ ВЕРСИЯ С АВТОФАРМОМ И ВСЕМИ ФУНКЦИЯМИ
+-- MM2 HUB UPDATE - COMPLETE VERSION WITH GOD MODE & WORKING AUTO FARM
 -- Discord: discord.gg/v8ZPq4y2nD
 
 local Players = game:GetService("Players")
@@ -10,7 +10,7 @@ local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 local TeleportService = game:GetService("TeleportService")
 
--- ПЕРЕМЕННЫЕ
+-- VARIABLES
 local espEnabled = false
 local espObjects = {}
 local aimbotEnabled = false
@@ -25,17 +25,23 @@ local knifeAuraEnabled = false
 local isMinimized = false
 local autoFarmEnabled = false
 local antiFlingEnabled = false
+local godModeEnabled = false
 local teleportToPlayerEnabled = false
 local selectedPlayer = nil
+local flingTarget = nil
+local flingEnabled = false
+local farmLoop = nil
+local godModeLoop = nil
+local antiFlingLoop = nil
 
--- ESP ЦВЕТА
+-- ESP COLORS
 local ESP_TEAM_COLORS = {
     Murderer = Color3.fromRGB(255, 0, 0),
     Sheriff = Color3.fromRGB(0, 100, 255),
     Innocent = Color3.fromRGB(0, 255, 0)
 }
 
--- ФУНКЦИЯ ПОЛУЧЕНИЯ РОЛИ
+-- FUNCTION TO GET PLAYER ROLE
 local function getPlayerRole(player)
     if not player or not player.Character then return "Innocent" end
     for _, item in pairs(player.Character:GetChildren()) do
@@ -47,7 +53,7 @@ local function getPlayerRole(player)
     return "Innocent"
 end
 
--- ОЧИСТКА ESP
+-- CLEAR ESP
 local function clearESP()
     for _, v in pairs(espObjects) do
         pcall(function() v:Destroy() end)
@@ -55,7 +61,7 @@ local function clearESP()
     espObjects = {}
 end
 
--- СОЗДАНИЕ ESP
+-- CREATE ESP
 local function createESP(player)
     if player == LocalPlayer or not player.Character then return end
     
@@ -65,7 +71,7 @@ local function createESP(player)
     local role = getPlayerRole(player)
     local color = ESP_TEAM_COLORS[role] or Color3.fromRGB(255, 255, 255)
     
-    -- Бокс
+    -- Box
     local box = Instance.new("BoxHandleAdornment")
     box.Size = Vector3.new(3, 5, 1)
     box.Adornee = root
@@ -76,7 +82,7 @@ local function createESP(player)
     box.Parent = root
     table.insert(espObjects, box)
     
-    -- Имя с ролью
+    -- Name with role
     local billboard = Instance.new("BillboardGui")
     billboard.Size = UDim2.new(0, 200, 0, 50)
     billboard.Adornee = root
@@ -94,7 +100,7 @@ local function createESP(player)
     label.Parent = billboard
     table.insert(espObjects, label)
     
-    -- Линия к игроку
+    -- Line to player
     local line = Instance.new("LineHandleAdornment")
     line.Length = 0
     line.Adornee = root
@@ -106,7 +112,7 @@ local function createESP(player)
     table.insert(espObjects, line)
 end
 
--- ОБНОВЛЕНИЕ ESP
+-- UPDATE ESP
 local function updateESP()
     clearESP()
     if not espEnabled then return end
@@ -118,7 +124,7 @@ local function updateESP()
     end
 end
 
--- СОЗДАНИЕ FOV
+-- CREATE FOV
 local function createFOV()
     if fovCircle then fovCircle:Destroy() end
     if not showFOV then return end
@@ -133,7 +139,7 @@ local function createFOV()
     fovCircle.ZIndex = 0
 end
 
--- ПОЛУЧЕНИЕ БЛИЖАЙШЕГО ИГРОКА ДЛЯ AIM
+-- GET CLOSEST PLAYER FOR AIM
 local function getClosestPlayer()
     local closest = nil
     local shortestDistance = fovSize
@@ -155,7 +161,7 @@ local function getClosestPlayer()
     return closest
 end
 
--- ПОЛУЧЕНИЕ БЛИЖАЙШЕЙ МОНЕТКИ
+-- GET CLOSEST COIN
 local function getClosestCoin()
     local closest = nil
     local shortestDistance = math.huge
@@ -175,12 +181,23 @@ local function getClosestCoin()
     return closest
 end
 
--- ТЕЛЕПОРТЫ
+-- GET ALL COINS
+local function getAllCoins()
+    local coins = {}
+    for _, item in pairs(Workspace:GetDescendants()) do
+        if item:IsA("Part") and item.Name == "Coin" and item.Parent then
+            table.insert(coins, item)
+        end
+    end
+    return coins
+end
+
+-- TELEPORT FUNCTIONS
 local function teleportToPlayer(player)
     if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
         local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if root then
-            root.CFrame = player.Character.HumanoidRootPart.CFrame
+            root.CFrame = player.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
         end
     end
 end
@@ -188,7 +205,7 @@ end
 local function teleportToPosition(position)
     local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if root then
-        root.CFrame = CFrame.new(position)
+        root.CFrame = CFrame.new(position + Vector3.new(0, 3, 0))
     end
 end
 
@@ -201,7 +218,7 @@ local function getGun()
     return nil
 end
 
--- УСКОРЕНИЕ
+-- SPEED
 local function setSpeed(state)
     speedEnabled = state
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
@@ -214,7 +231,7 @@ local function setSpeed(state)
     end
 end
 
--- ПРЫЖОК
+-- JUMP
 local function setJumpPower(state)
     jumpEnabled = state
     if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
@@ -227,12 +244,46 @@ local function setJumpPower(state)
     end
 end
 
--- АНТИ-ФЛИНГ
+-- GOD MODE
+local function toggleGodMode(state)
+    godModeEnabled = state
+    
+    if godModeLoop then
+        godModeLoop:Disconnect()
+        godModeLoop = nil
+    end
+    
+    if state then
+        godModeLoop = RunService.Heartbeat:Connect(function()
+            if godModeEnabled and LocalPlayer.Character then
+                local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
+                if humanoid then
+                    humanoid.Health = humanoid.MaxHealth
+                    humanoid.BreakJointsOnDeath = false
+                end
+                
+                -- Make character invincible
+                for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
+                    end
+                end
+            end
+        end)
+    end
+end
+
+-- ANTI FLING
 local function toggleAntiFling(state)
     antiFlingEnabled = state
+    
+    if antiFlingLoop then
+        antiFlingLoop:Disconnect()
+        antiFlingLoop = nil
+    end
+    
     if state then
-        -- Защита от флинга
-        RunService.Heartbeat:Connect(function()
+        antiFlingLoop = RunService.Heartbeat:Connect(function()
             if antiFlingEnabled and LocalPlayer.Character then
                 local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if root and root.Velocity and root.Velocity.Magnitude > 200 then
@@ -243,30 +294,150 @@ local function toggleAntiFling(state)
     end
 end
 
--- АВТОФАРМ МОНЕТ
+-- AUTO FARM
 local function toggleAutoFarm(state)
     autoFarmEnabled = state
+    
+    if farmLoop then
+        farmLoop:Disconnect()
+        farmLoop = nil
+    end
+    
     if state then
-        RunService.Heartbeat:Connect(function()
+        farmLoop = RunService.Heartbeat:Connect(function()
             if autoFarmEnabled and LocalPlayer.Character then
-                local coin = getClosestCoin()
-                if coin then
-                    teleportToPosition(coin.Position)
-                    wait(0.1)
+                local coins = getAllCoins()
+                if #coins > 0 then
+                    -- Teleport to each coin
+                    for _, coin in pairs(coins) do
+                        if coin and coin.Parent then
+                            local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                            if root then
+                                root.CFrame = CFrame.new(coin.Position + Vector3.new(0, 3, 0))
+                                wait(0.05)
+                            end
+                        end
+                    end
+                else
+                    -- If no coins found, move to random position
+                    local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        root.CFrame = CFrame.new(Vector3.new(
+                            math.random(-50, 50),
+                            10,
+                            math.random(-50, 50)
+                        ))
+                    end
                 end
             end
         end)
     end
 end
 
--- СОЗДАНИЕ GUI
+-- FLING PLAYER
+local function flingPlayer(player)
+    if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local root = player.Character.HumanoidRootPart
+        root.Velocity = Vector3.new(0, 1000, 0)
+        wait(0.1)
+        root.Velocity = Vector3.new(1000, 500, 1000)
+        wait(0.1)
+        root.Velocity = Vector3.new(-1000, 500, -1000)
+        wait(0.1)
+        root.Velocity = Vector3.new(0, 2000, 0)
+    end
+end
+
+-- GET PLAYER LIST FOR TELEPORT MENU
+local function getPlayerList()
+    local list = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(list, player)
+        end
+    end
+    return list
+end
+
+-- CREATE TELEPORT TO PLAYER MENU
+local function createTeleportMenu()
+    local menuFrame = Instance.new("Frame")
+    menuFrame.Size = UDim2.new(0, 300, 0, 400)
+    menuFrame.Position = UDim2.new(0.5, -150, 0.5, -200)
+    menuFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+    menuFrame.BackgroundTransparency = 0.1
+    menuFrame.BorderSizePixel = 0
+    menuFrame.Parent = screenGui
+    
+    local menuCorner = Instance.new("UICorner")
+    menuCorner.CornerRadius = UDim.new(0, 12)
+    menuCorner.Parent = menuFrame
+    
+    local menuTitle = Instance.new("TextLabel")
+    menuTitle.Size = UDim2.new(1, 0, 0, 40)
+    menuTitle.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    menuTitle.Text = "Teleport To Player"
+    menuTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    menuTitle.TextScaled = true
+    menuTitle.Font = Enum.Font.GothamBold
+    menuTitle.BorderSizePixel = 0
+    menuTitle.Parent = menuFrame
+    
+    local closeMenuBtn = Instance.new("TextButton")
+    closeMenuBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeMenuBtn.Position = UDim2.new(1, -35, 0, 5)
+    closeMenuBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    closeMenuBtn.Text = "X"
+    closeMenuBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeMenuBtn.TextScaled = true
+    closeMenuBtn.BorderSizePixel = 0
+    closeMenuBtn.Parent = menuFrame
+    closeMenuBtn.MouseButton1Click:Connect(function()
+        menuFrame:Destroy()
+    end)
+    
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -10, 1, -50)
+    scrollFrame.Position = UDim2.new(0, 5, 0, 45)
+    scrollFrame.BackgroundTransparency = 1
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 6
+    scrollFrame.Parent = menuFrame
+    
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 5)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = scrollFrame
+    
+    local players = getPlayerList()
+    for _, player in pairs(players) do
+        local playerBtn = Instance.new("TextButton")
+        playerBtn.Size = UDim2.new(1, 0, 0, 35)
+        playerBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+        playerBtn.Text = player.Name .. " [" .. getPlayerRole(player) .. "]"
+        playerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        playerBtn.TextScaled = true
+        playerBtn.BorderSizePixel = 0
+        playerBtn.Parent = scrollFrame
+        
+        local roleColor = ESP_TEAM_COLORS[getPlayerRole(player)] or Color3.fromRGB(255, 255, 255)
+        playerBtn.TextColor3 = roleColor
+        
+        playerBtn.MouseButton1Click:Connect(function()
+            teleportToPlayer(player)
+            menuFrame:Destroy()
+        end)
+    end
+end
+
+-- CREATE GUI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "MM2HUBUPDATE"
 screenGui.Parent = game.CoreGui
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 500, 0, 650)
-mainFrame.Position = UDim2.new(0.5, -250, 0.5, -325)
+mainFrame.Size = UDim2.new(0, 550, 0, 720)
+mainFrame.Position = UDim2.new(0.5, -275, 0.5, -360)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 mainFrame.BackgroundTransparency = 0.1
 mainFrame.BorderSizePixel = 0
@@ -276,7 +447,7 @@ local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 12)
 corner.Parent = mainFrame
 
--- КНОПКА СВЕРТЫВАНИЯ
+-- MINIMIZE BUTTON
 local minimizeBtn = Instance.new("TextButton")
 minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
 minimizeBtn.Position = UDim2.new(1, -70, 0, 5)
@@ -287,7 +458,7 @@ minimizeBtn.TextScaled = true
 minimizeBtn.BorderSizePixel = 0
 minimizeBtn.Parent = mainFrame
 
--- ЗАГОЛОВОК
+-- TITLE
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -110, 0, 40)
 title.Position = UDim2.new(0, 5, 0, 0)
@@ -299,7 +470,7 @@ title.Font = Enum.Font.GothamBold
 title.BorderSizePixel = 0
 title.Parent = mainFrame
 
--- КНОПКА ЗАКРЫТИЯ
+-- CLOSE BUTTON
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.new(0, 30, 0, 30)
 closeBtn.Position = UDim2.new(1, -35, 0, 5)
@@ -310,24 +481,24 @@ closeBtn.TextScaled = true
 closeBtn.BorderSizePixel = 0
 closeBtn.Parent = mainFrame
 
--- КОНТЕЙНЕР ДЛЯ ВСЕХ ЭЛЕМЕНТОВ
+-- CONTENT CONTAINER
 local contentContainer = Instance.new("Frame")
 contentContainer.Size = UDim2.new(1, 0, 1, -40)
 contentContainer.Position = UDim2.new(0, 0, 0, 40)
 contentContainer.BackgroundTransparency = 1
 contentContainer.Parent = mainFrame
 
--- ФУНКЦИЯ СВЕРТЫВАНИЯ
+-- TOGGLE MINIMIZE
 local function toggleMinimize()
     isMinimized = not isMinimized
     
     if isMinimized then
-        mainFrame:TweenSize(UDim2.new(0, 500, 0, 40), "Out", "Quad", 0.3, true)
+        mainFrame:TweenSize(UDim2.new(0, 550, 0, 40), "Out", "Quad", 0.3, true)
         contentContainer.Visible = false
         minimizeBtn.Text = "□"
         minimizeBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
     else
-        mainFrame:TweenSize(UDim2.new(0, 500, 0, 650), "Out", "Quad", 0.3, true)
+        mainFrame:TweenSize(UDim2.new(0, 550, 0, 720), "Out", "Quad", 0.3, true)
         wait(0.35)
         contentContainer.Visible = true
         minimizeBtn.Text = "━"
@@ -340,12 +511,15 @@ minimizeBtn.MouseButton1Click:Connect(toggleMinimize)
 closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
     clearESP()
+    if godModeLoop then godModeLoop:Disconnect() end
+    if farmLoop then farmLoop:Disconnect() end
+    if antiFlingLoop then antiFlingLoop:Disconnect() end
 end)
 
--- ФУНКЦИИ СОЗДАНИЯ GUI
+-- CREATE TAB FUNCTION
 local function createTab(name, y)
     local tab = Instance.new("TextButton")
-    tab.Size = UDim2.new(0, 90, 0, 30)
+    tab.Size = UDim2.new(0, 100, 0, 30)
     tab.Position = UDim2.new(0, 10, 0, y)
     tab.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
     tab.Text = name
@@ -356,9 +530,10 @@ local function createTab(name, y)
     return tab
 end
 
+-- CREATE SECTION FUNCTION
 local function createSection(name, parent)
     local section = Instance.new("Frame")
-    section.Size = UDim2.new(1, -20, 0, 500)
+    section.Size = UDim2.new(1, -20, 0, 570)
     section.Position = UDim2.new(0, 10, 0, 80)
     section.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
     section.BackgroundTransparency = 0.5
@@ -391,6 +566,7 @@ local function createSection(name, parent)
     return {section = section, scroll = scroll, list = list}
 end
 
+-- CREATE BUTTON FUNCTION
 local function createButton(text, callback, parent)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -10, 0, 35)
@@ -404,6 +580,7 @@ local function createButton(text, callback, parent)
     return btn
 end
 
+-- CREATE TOGGLE FUNCTION
 local function createToggle(text, callback, parent)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, -10, 0, 35)
@@ -411,7 +588,7 @@ local function createToggle(text, callback, parent)
     frame.Parent = parent.scroll
     
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.Size = UDim2.new(0.65, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Text = text
     label.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -436,27 +613,73 @@ local function createToggle(text, callback, parent)
     return frame
 end
 
--- СОЗДАНИЕ ВКЛАДОК
+-- CREATE SLIDER FUNCTION
+local function createSlider(text, min, max, default, callback, parent)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -10, 0, 45)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent.scroll
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0, 20)
+    label.BackgroundTransparency = 1
+    label.Text = text .. ": " .. tostring(default)
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextScaled = true
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+    
+    local slider = Instance.new("TextButton")
+    slider.Size = UDim2.new(1, 0, 0, 20)
+    slider.Position = UDim2.new(0, 0, 0, 22)
+    slider.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+    slider.Text = ""
+    slider.BorderSizePixel = 0
+    slider.Parent = frame
+    
+    local value = default
+    slider.MouseButton1Down:Connect(function()
+        local connection
+        connection = RunService.Heartbeat:Connect(function()
+            local mousePos = UserInputService:GetMouseLocation()
+            local sliderPos = slider.AbsolutePosition
+            local sliderSize = slider.AbsoluteSize
+            local percent = math.clamp((mousePos.X - sliderPos.X) / sliderSize.X, 0, 1)
+            value = math.round(min + (max - min) * percent)
+            label.Text = text .. ": " .. tostring(value)
+            callback(value)
+        end)
+        
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                connection:Disconnect()
+            end
+        end)
+    end)
+    return frame
+end
+
+-- CREATE TABS
 local tabs = {}
 
-local mainSection = createSection("Главная", contentContainer)
-tabs["Главная"] = mainSection
+local mainSection = createSection("Main", contentContainer)
+tabs["Main"] = mainSection
 mainSection.section.Visible = true
 
 local aimSection = createSection("Aim", contentContainer)
 tabs["Aim"] = aimSection
 
-local tpSection = createSection("Телепорты", contentContainer)
-tabs["Телепорты"] = tpSection
+local teleportSection = createSection("Teleport", contentContainer)
+tabs["Teleport"] = teleportSection
 
-local farmSection = createSection("Фарм", contentContainer)
-tabs["Фарм"] = farmSection
+local farmSection = createSection("Farm", contentContainer)
+tabs["Farm"] = farmSection
 
-local miscSection = createSection("Разное", contentContainer)
-tabs["Разное"] = miscSection
+local miscSection = createSection("Misc", contentContainer)
+tabs["Misc"] = miscSection
 
--- КНОПКИ ВКЛАДОК
-local tabNames = {"Главная", "Aim", "Телепорты", "Фарм", "Разное"}
+-- TAB BUTTONS
+local tabNames = {"Main", "Aim", "Teleport", "Farm", "Misc"}
 for i, name in ipairs(tabNames) do
     local btn = createTab(name, 45 + (i-1) * 35)
     btn.MouseButton1Click:Connect(function()
@@ -467,14 +690,12 @@ for i, name in ipairs(tabNames) do
     end)
 end
 
--- ЗАПОЛНЕНИЕ ВКЛАДОК
-
--- ГЛАВНАЯ
-createButton("Обновить ESP", function()
+-- MAIN TAB
+createButton("Update ESP", function()
     updateESP()
 end, mainSection)
 
-createToggle("ESP Вкл", function(state)
+createToggle("ESP Enabled", function(state)
     espEnabled = state
     if state then
         updateESP()
@@ -483,19 +704,23 @@ createToggle("ESP Вкл", function(state)
     end
 end, mainSection)
 
-createToggle("Ускорение x2", function(state)
+createToggle("Speed x2", function(state)
     setSpeed(state)
 end, mainSection)
 
-createToggle("Супер прыжок", function(state)
+createToggle("Super Jump", function(state)
     setJumpPower(state)
 end, mainSection)
 
-createToggle("Анти-флинг", function(state)
+createToggle("Anti Fling", function(state)
     toggleAntiFling(state)
 end, mainSection)
 
--- AIM
+createToggle("God Mode", function(state)
+    toggleGodMode(state)
+end, mainSection)
+
+-- AIM TAB
 createToggle("Aimbot", function(state)
     aimbotEnabled = state
 end, aimSection)
@@ -504,106 +729,178 @@ createToggle("Silent Aim", function(state)
     silentAimEnabled = state
 end, aimSection)
 
-createToggle("Авто-выстрел", function(state)
+createToggle("Auto Shoot", function(state)
     autoShootEnabled = state
 end, aimSection)
 
-createToggle("Показать FOV", function(state)
+createToggle("Show FOV", function(state)
     showFOV = state
     createFOV()
 end, aimSection)
 
--- ТЕЛЕПОРТЫ
-createButton("К убийце", function()
+createSlider("FOV Size", 50, 500, 200, function(value)
+    fovSize = value
+    if fovCircle then
+        fovCircle.Radius = value
+    end
+end, aimSection)
+
+-- TELEPORT TAB
+createButton("Teleport To Murderer", function()
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and getPlayerRole(player) == "Murderer" then
             teleportToPlayer(player)
             break
         end
     end
-end, tpSection)
+end, teleportSection)
 
-createButton("К шерифу", function()
+createButton("Teleport To Sheriff", function()
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and getPlayerRole(player) == "Sheriff" then
             teleportToPlayer(player)
             break
         end
     end
-end, tpSection)
+end, teleportSection)
 
-createButton("К игроку", function()
-    local playerList = {}
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            table.insert(playerList, player.Name)
-        end
-    end
-    if #playerList > 0 then
-        for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                teleportToPlayer(player)
-                break
-            end
-        end
-    end
-end, tpSection)
+createButton("Teleport To Player", function()
+    createTeleportMenu()
+end, teleportSection)
 
-createButton("К оружию", function()
+createButton("Teleport To Gun", function()
     local gun = getGun()
     if gun then
         gun.Parent = LocalPlayer.Character
     end
-end, tpSection)
+end, teleportSection)
 
-createButton("К монетке", function()
+createButton("Teleport To Coin", function()
     local coin = getClosestCoin()
     if coin then
         teleportToPosition(coin.Position)
     end
-end, tpSection)
+end, teleportSection)
 
-createButton("В безопасную зону", function()
+createButton("Teleport To Safe Zone", function()
     teleportToPosition(Vector3.new(0, 10, 0))
-end, tpSection)
+end, teleportSection)
 
-createButton("В лобби", function()
+createButton("Teleport To Lobby", function()
     teleportToPosition(Vector3.new(0, 0, 0))
-end, tpSection)
+end, teleportSection)
 
--- ФАРМ
-createToggle("Автофарм монет", function(state)
+-- FARM TAB
+createToggle("Auto Farm Coins", function(state)
     toggleAutoFarm(state)
 end, farmSection)
 
-createToggle("Аура ножа", function(state)
+createToggle("Knife Aura", function(state)
     knifeAuraEnabled = state
 end, farmSection)
 
-createButton("Бросить нож", function()
+createButton("Throw Knife", function()
     local tool = LocalPlayer.Character:FindFirstChildWhichIsA("Tool")
     if tool then tool:Activate() end
 end, farmSection)
 
--- РАЗНОЕ
-createToggle("Телепорт к игроку (авто)", function(state)
-    teleportToPlayerEnabled = state
-end, miscSection)
-
-createButton("Выбрать игрока для ТП", function()
-    local playerList = {}
+-- MISC TAB
+createButton("Fling Murderer", function()
     for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            table.insert(playerList, player.Name)
+        if player ~= LocalPlayer and getPlayerRole(player) == "Murderer" then
+            flingPlayer(player)
+            break
         end
     end
-    if #playerList > 0 then
-        selectedPlayer = playerList[1]
-        print("Выбран игрок: " .. selectedPlayer)
+end, miscSection)
+
+createButton("Fling Sheriff", function()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and getPlayerRole(player) == "Sheriff" then
+            flingPlayer(player)
+            break
+        end
     end
 end, miscSection)
 
--- ОСНОВНОЙ ЦИКЛ
+createButton("Fling All Players", function()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            flingPlayer(player)
+            wait(0.2)
+        end
+    end
+end, miscSection)
+
+createButton("Fling Target Player", function()
+    local menuFrame = Instance.new("Frame")
+    menuFrame.Size = UDim2.new(0, 300, 0, 400)
+    menuFrame.Position = UDim2.new(0.5, -150, 0.5, -200)
+    menuFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+    menuFrame.BackgroundTransparency = 0.1
+    menuFrame.BorderSizePixel = 0
+    menuFrame.Parent = screenGui
+    
+    local menuCorner = Instance.new("UICorner")
+    menuCorner.CornerRadius = UDim.new(0, 12)
+    menuCorner.Parent = menuFrame
+    
+    local menuTitle = Instance.new("TextLabel")
+    menuTitle.Size = UDim2.new(1, 0, 0, 40)
+    menuTitle.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+    menuTitle.Text = "Select Player To Fling"
+    menuTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    menuTitle.TextScaled = true
+    menuTitle.Font = Enum.Font.GothamBold
+    menuTitle.BorderSizePixel = 0
+    menuTitle.Parent = menuFrame
+    
+    local closeMenuBtn = Instance.new("TextButton")
+    closeMenuBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeMenuBtn.Position = UDim2.new(1, -35, 0, 5)
+    closeMenuBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    closeMenuBtn.Text = "X"
+    closeMenuBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeMenuBtn.TextScaled = true
+    closeMenuBtn.BorderSizePixel = 0
+    closeMenuBtn.Parent = menuFrame
+    closeMenuBtn.MouseButton1Click:Connect(function()
+        menuFrame:Destroy()
+    end)
+    
+    local scrollFrame = Instance.new("ScrollingFrame")
+    scrollFrame.Size = UDim2.new(1, -10, 1, -50)
+    scrollFrame.Position = UDim2.new(0, 5, 0, 45)
+    scrollFrame.BackgroundTransparency = 1
+    scrollFrame.BorderSizePixel = 0
+    scrollFrame.ScrollBarThickness = 6
+    scrollFrame.Parent = menuFrame
+    
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 5)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = scrollFrame
+    
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local playerBtn = Instance.new("TextButton")
+            playerBtn.Size = UDim2.new(1, 0, 0, 35)
+            playerBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+            playerBtn.Text = player.Name .. " [" .. getPlayerRole(player) .. "]"
+            playerBtn.TextColor3 = ESP_TEAM_COLORS[getPlayerRole(player)] or Color3.fromRGB(255, 255, 255)
+            playerBtn.TextScaled = true
+            playerBtn.BorderSizePixel = 0
+            playerBtn.Parent = scrollFrame
+            
+            playerBtn.MouseButton1Click:Connect(function()
+                flingPlayer(player)
+                menuFrame:Destroy()
+            end)
+        end
+    end
+end, miscSection)
+
+-- MAIN LOOP
 RunService.Heartbeat:Connect(function()
     -- Aimbot
     if aimbotEnabled then
@@ -619,101 +916,20 @@ RunService.Heartbeat:Connect(function()
         local target = getClosestPlayer()
         if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
             local root = target.Character.HumanoidRootPart
-            -- Перенаправляем выстрелы
             Camera.CFrame = CFrame.new(Camera.CFrame.Position, root.Position)
         end
     end
     
-    -- Обновление FOV
+    -- Update FOV
     if fovCircle then
         fovCircle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
     end
     
-    -- Аура ножа
+    -- Knife Aura
     if knifeAuraEnabled and LocalPlayer.Character then
         local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if root then
             for _, player in pairs(Players:GetPlayers()) do
                 if player ~= LocalPlayer and player.Character then
                     local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
-                    if targetRoot and (root.Position - targetRoot.Position).Magnitude < 15 then
-                        player.Character.Humanoid.Health = 0
-                    end
-                end
-            end
-        end
-    end
-    
-    -- Авто-выстрел
-    if autoShootEnabled then
-        local target = getClosestPlayer()
-        if target and target.Character then
-            target.Character.Humanoid.Health = 0
-        end
-    end
-    
-    -- Телепорт к игроку (авто)
-    if teleportToPlayerEnabled and selectedPlayer then
-        for _, player in pairs(Players:GetPlayers()) do
-            if player.Name == selectedPlayer and player.Character then
-                teleportToPlayer(player)
-                wait(0.5)
-            end
-        end
-    end
-    
-    -- Обновление скорости
-    if speedEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        if LocalPlayer.Character.Humanoid.WalkSpeed ~= 32 then
-            LocalPlayer.Character.Humanoid.WalkSpeed = 32
-        end
-    end
-    
-    -- Обновление прыжка
-    if jumpEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        if LocalPlayer.Character.Humanoid.JumpPower ~= 100 then
-            LocalPlayer.Character.Humanoid.JumpPower = 100
-        end
-    end
-end)
-
--- ОБНОВЛЕНИЕ ESP ПРИ НОВЫХ ИГРОКАХ
-Players.PlayerAdded:Connect(function()
-    wait(1)
-    if espEnabled then updateESP() end
-end)
-
--- ОБНОВЛЕНИЕ ESP ПРИ СМЕНЕ РОЛИ
-RunService.Heartbeat:Connect(function()
-    if espEnabled then
-        for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                local role = getPlayerRole(player)
-                local color = ESP_TEAM_COLORS[role] or Color3.fromRGB(255, 255, 255)
-                for _, obj in pairs(espObjects) do
-                    if obj:IsA("BoxHandleAdornment") and obj.Adornee == player.Character:FindFirstChild("HumanoidRootPart") then
-                        obj.Color3 = color
-                    end
-                end
-            end
-        end
-    end
-end)
-
--- ГОРЯЧАЯ КЛАВИША ДЛЯ СВЕРТЫВАНИЯ
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    
-    if input.KeyCode == Enum.KeyCode.M and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-        toggleMinimize()
-    end
-end)
-
-print("MM2 HUB UPDATE загружен!")
-print("✅ ESP: Убийца - Красный, Шериф - Синий, Мирный - Зеленый")
-print("✅ Ускорение x2 и супер прыжок")
-print("✅ Aimbot и Silent Aim")
-print("✅ Автофарм монет")
-print("✅ Анти-флинг")
-print("✅ Телепорт к игрокам")
-print("Для свертывания нажмите '━' или Ctrl+M")
+                    if targetRoot and (root.Position - targetRoot.Position).Magnitude <
