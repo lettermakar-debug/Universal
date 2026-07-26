@@ -1,4 +1,4 @@
--- MM2 HUB UPDATE - COMPLETE VERSION
+-- MM2 HUB UPDATE - COMPLETE VERSION WITH PLAYER MENU & WORKING BUTTONS
 -- Discord: discord.gg/v8ZPq4y2nD
 
 local Players = game:GetService("Players")
@@ -25,10 +25,11 @@ local knifeAuraEnabled = false
 local isMinimized = false
 local autoFarmEnabled = false
 local antiFlingEnabled = false
-local teleportToPlayerEnabled = false
-local selectedPlayer = nil
-local flingTarget = nil
-local flingEnabled = false
+local godModeEnabled = false
+local farmLoop = nil
+local godModeLoop = nil
+local antiFlingLoop = nil
+local playerMenuOpen = false
 
 -- ESP COLORS
 local ESP_TEAM_COLORS = {
@@ -67,7 +68,6 @@ local function createESP(player)
     local role = getPlayerRole(player)
     local color = ESP_TEAM_COLORS[role] or Color3.fromRGB(255, 255, 255)
     
-    -- Box
     local box = Instance.new("BoxHandleAdornment")
     box.Size = Vector3.new(3, 5, 1)
     box.Adornee = root
@@ -78,7 +78,6 @@ local function createESP(player)
     box.Parent = root
     table.insert(espObjects, box)
     
-    -- Name with role
     local billboard = Instance.new("BillboardGui")
     billboard.Size = UDim2.new(0, 200, 0, 50)
     billboard.Adornee = root
@@ -96,7 +95,6 @@ local function createESP(player)
     label.Parent = billboard
     table.insert(espObjects, label)
     
-    -- Line to player
     local line = Instance.new("LineHandleAdornment")
     line.Length = 0
     line.Adornee = root
@@ -177,12 +175,23 @@ local function getClosestCoin()
     return closest
 end
 
+-- GET ALL COINS
+local function getAllCoins()
+    local coins = {}
+    for _, item in pairs(Workspace:GetDescendants()) do
+        if item:IsA("Part") and item.Name == "Coin" and item.Parent then
+            table.insert(coins, item)
+        end
+    end
+    return coins
+end
+
 -- TELEPORT FUNCTIONS
 local function teleportToPlayer(player)
     if player and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
         local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if root then
-            root.CFrame = player.Character.HumanoidRootPart.CFrame
+            root.CFrame = player.Character.HumanoidRootPart.CFrame + Vector3.new(0, 3, 0)
         end
     end
 end
@@ -190,7 +199,7 @@ end
 local function teleportToPosition(position)
     local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if root then
-        root.CFrame = CFrame.new(position)
+        root.CFrame = CFrame.new(position + Vector3.new(0, 3, 0))
     end
 end
 
@@ -229,11 +238,39 @@ local function setJumpPower(state)
     end
 end
 
+-- GOD MODE
+local function toggleGodMode(state)
+    godModeEnabled = state
+    
+    if godModeLoop then
+        godModeLoop:Disconnect()
+        godModeLoop = nil
+    end
+    
+    if state then
+        godModeLoop = RunService.Heartbeat:Connect(function()
+            if godModeEnabled and LocalPlayer.Character then
+                local humanoid = LocalPlayer.Character:FindFirstChild("Humanoid")
+                if humanoid then
+                    humanoid.Health = humanoid.MaxHealth
+                    humanoid.BreakJointsOnDeath = false
+                end
+            end
+        end)
+    end
+end
+
 -- ANTI FLING
 local function toggleAntiFling(state)
     antiFlingEnabled = state
+    
+    if antiFlingLoop then
+        antiFlingLoop:Disconnect()
+        antiFlingLoop = nil
+    end
+    
     if state then
-        RunService.Heartbeat:Connect(function()
+        antiFlingLoop = RunService.Heartbeat:Connect(function()
             if antiFlingEnabled and LocalPlayer.Character then
                 local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if root and root.Velocity and root.Velocity.Magnitude > 200 then
@@ -247,13 +284,26 @@ end
 -- AUTO FARM
 local function toggleAutoFarm(state)
     autoFarmEnabled = state
+    
+    if farmLoop then
+        farmLoop:Disconnect()
+        farmLoop = nil
+    end
+    
     if state then
-        RunService.Heartbeat:Connect(function()
+        farmLoop = RunService.Heartbeat:Connect(function()
             if autoFarmEnabled and LocalPlayer.Character then
-                local coin = getClosestCoin()
-                if coin then
-                    teleportToPosition(coin.Position)
-                    wait(0.1)
+                local coins = getAllCoins()
+                if #coins > 0 then
+                    for _, coin in pairs(coins) do
+                        if coin and coin.Parent then
+                            local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                            if root then
+                                root.CFrame = CFrame.new(coin.Position + Vector3.new(0, 3, 0))
+                                wait(0.05)
+                            end
+                        end
+                    end
                 end
             end
         end)
@@ -269,26 +319,23 @@ local function flingPlayer(player)
         root.Velocity = Vector3.new(1000, 500, 1000)
         wait(0.1)
         root.Velocity = Vector3.new(-1000, 500, -1000)
+        wait(0.1)
+        root.Velocity = Vector3.new(0, 2000, 0)
     end
 end
 
--- GET PLAYER LIST FOR TELEPORT MENU
-local function getPlayerList()
-    local list = {}
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            table.insert(list, player)
-        end
+-- CREATE PLAYER MENU
+local function createPlayerMenu()
+    if playerMenuOpen then
+        return
     end
-    return list
-end
-
--- CREATE TELEPORT TO PLAYER MENU
-local function createTeleportMenu()
+    
+    playerMenuOpen = true
+    
     local menuFrame = Instance.new("Frame")
-    menuFrame.Size = UDim2.new(0, 300, 0, 400)
-    menuFrame.Position = UDim2.new(0.5, -150, 0.5, -200)
-    menuFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+    menuFrame.Size = UDim2.new(0, 350, 0, 450)
+    menuFrame.Position = UDim2.new(0.5, -175, 0.5, -225)
+    menuFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
     menuFrame.BackgroundTransparency = 0.1
     menuFrame.BorderSizePixel = 0
     menuFrame.Parent = screenGui
@@ -298,9 +345,10 @@ local function createTeleportMenu()
     menuCorner.Parent = menuFrame
     
     local menuTitle = Instance.new("TextLabel")
-    menuTitle.Size = UDim2.new(1, 0, 0, 40)
-    menuTitle.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-    menuTitle.Text = "Teleport To Player"
+    menuTitle.Size = UDim2.new(1, 0, 0, 45)
+    menuTitle.Position = UDim2.new(0, 0, 0, 0)
+    menuTitle.BackgroundColor3 = Color3.fromRGB(50, 50, 75)
+    menuTitle.Text = "👥 Player List"
     menuTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
     menuTitle.TextScaled = true
     menuTitle.Font = Enum.Font.GothamBold
@@ -308,21 +356,35 @@ local function createTeleportMenu()
     menuTitle.Parent = menuFrame
     
     local closeMenuBtn = Instance.new("TextButton")
-    closeMenuBtn.Size = UDim2.new(0, 30, 0, 30)
-    closeMenuBtn.Position = UDim2.new(1, -35, 0, 5)
+    closeMenuBtn.Size = UDim2.new(0, 35, 0, 35)
+    closeMenuBtn.Position = UDim2.new(1, -40, 0, 5)
     closeMenuBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-    closeMenuBtn.Text = "X"
+    closeMenuBtn.Text = "✕"
     closeMenuBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     closeMenuBtn.TextScaled = true
     closeMenuBtn.BorderSizePixel = 0
     closeMenuBtn.Parent = menuFrame
     closeMenuBtn.MouseButton1Click:Connect(function()
         menuFrame:Destroy()
+        playerMenuOpen = false
     end)
     
+    local searchBar = Instance.new("TextBox")
+    searchBar.Size = UDim2.new(1, -20, 0, 35)
+    searchBar.Position = UDim2.new(0, 10, 0, 50)
+    searchBar.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    searchBar.TextColor3 = Color3.fromRGB(255, 255, 255)
+    searchBar.PlaceholderText = "🔍 Search players..."
+    searchBar.PlaceholderColor3 = Color3.fromRGB(150, 150, 170)
+    searchBar.Text = ""
+    searchBar.Font = Enum.Font.Gotham
+    searchBar.TextScaled = true
+    searchBar.BorderSizePixel = 0
+    searchBar.Parent = menuFrame
+    
     local scrollFrame = Instance.new("ScrollingFrame")
-    scrollFrame.Size = UDim2.new(1, -10, 1, -50)
-    scrollFrame.Position = UDim2.new(0, 5, 0, 45)
+    scrollFrame.Size = UDim2.new(1, -10, 1, -100)
+    scrollFrame.Position = UDim2.new(0, 5, 0, 90)
     scrollFrame.BackgroundTransparency = 1
     scrollFrame.BorderSizePixel = 0
     scrollFrame.ScrollBarThickness = 6
@@ -333,25 +395,75 @@ local function createTeleportMenu()
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Parent = scrollFrame
     
-    local players = getPlayerList()
-    for _, player in pairs(players) do
-        local playerBtn = Instance.new("TextButton")
-        playerBtn.Size = UDim2.new(1, 0, 0, 35)
-        playerBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-        playerBtn.Text = player.Name .. " [" .. getPlayerRole(player) .. "]"
-        playerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        playerBtn.TextScaled = true
-        playerBtn.BorderSizePixel = 0
-        playerBtn.Parent = scrollFrame
+    -- Function to update player list
+    local function updatePlayerList(filter)
+        for _, child in pairs(scrollFrame:GetChildren()) do
+            if child:IsA("TextButton") then
+                child:Destroy()
+            end
+        end
         
-        local roleColor = ESP_TEAM_COLORS[getPlayerRole(player)] or Color3.fromRGB(255, 255, 255)
-        playerBtn.TextColor3 = roleColor
-        
-        playerBtn.MouseButton1Click:Connect(function()
-            teleportToPlayer(player)
-            menuFrame:Destroy()
-        end)
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local name = player.Name:lower()
+                local filterLower = filter:lower()
+                
+                if filter == "" or string.find(name, filterLower) then
+                    local role = getPlayerRole(player)
+                    local color = ESP_TEAM_COLORS[role] or Color3.fromRGB(255, 255, 255)
+                    
+                    local playerBtn = Instance.new("TextButton")
+                    playerBtn.Size = UDim2.new(1, 0, 0, 40)
+                    playerBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+                    playerBtn.Text = player.Name .. "  [" .. role .. "]"
+                    playerBtn.TextColor3 = color
+                    playerBtn.TextScaled = true
+                    playerBtn.Font = Enum.Font.Gotham
+                    playerBtn.BorderSizePixel = 0
+                    playerBtn.Parent = scrollFrame
+                    
+                    -- Hover effect
+                    playerBtn.MouseEnter:Connect(function()
+                        playerBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+                    end)
+                    playerBtn.MouseLeave:Connect(function()
+                        playerBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+                    end)
+                    
+                    -- Teleport on click
+                    playerBtn.MouseButton1Click:Connect(function()
+                        teleportToPlayer(player)
+                        menuFrame:Destroy()
+                        playerMenuOpen = false
+                    end)
+                    
+                    -- Right click for fling
+                    playerBtn.MouseButton2Click:Connect(function()
+                        flingPlayer(player)
+                        menuFrame:Destroy()
+                        playerMenuOpen = false
+                    end)
+                end
+            end
+        end
     end
+    
+    -- Initial update
+    updatePlayerList("")
+    
+    -- Search functionality
+    searchBar.Changed:Connect(function()
+        updatePlayerList(searchBar.Text)
+    end)
+    
+    -- Update when players change
+    Players.PlayerAdded:Connect(function()
+        updatePlayerList(searchBar.Text)
+    end)
+    
+    Players.PlayerRemoving:Connect(function()
+        updatePlayerList(searchBar.Text)
+    end)
 end
 
 -- CREATE GUI
@@ -360,8 +472,8 @@ screenGui.Name = "MM2HUBUPDATE"
 screenGui.Parent = game.CoreGui
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 550, 0, 700)
-mainFrame.Position = UDim2.new(0.5, -275, 0.5, -350)
+mainFrame.Size = UDim2.new(0, 550, 0, 720)
+mainFrame.Position = UDim2.new(0.5, -275, 0.5, -360)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
 mainFrame.BackgroundTransparency = 0.1
 mainFrame.BorderSizePixel = 0
@@ -371,44 +483,67 @@ local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 12)
 corner.Parent = mainFrame
 
--- MINIMIZE BUTTON
-local minimizeBtn = Instance.new("TextButton")
-minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
-minimizeBtn.Position = UDim2.new(1, -70, 0, 5)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
-minimizeBtn.Text = "━"
-minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-minimizeBtn.TextScaled = true
-minimizeBtn.BorderSizePixel = 0
-minimizeBtn.Parent = mainFrame
+-- TITLE BAR
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 45)
+titleBar.Position = UDim2.new(0, 0, 0, 0)
+titleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
 
 -- TITLE
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -110, 0, 40)
-title.Position = UDim2.new(0, 5, 0, 0)
+title.Size = UDim2.new(0.7, 0, 1, 0)
+title.Position = UDim2.new(0, 10, 0, 0)
 title.BackgroundTransparency = 1
 title.Text = "MM2 HUB UPDATE"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextScaled = true
 title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
 title.BorderSizePixel = 0
-title.Parent = mainFrame
+title.Parent = titleBar
+
+-- MINIMIZE BUTTON
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 35, 0, 35)
+minimizeBtn.Position = UDim2.new(1, -75, 0, 5)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+minimizeBtn.Text = "━"
+minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+minimizeBtn.TextScaled = true
+minimizeBtn.BorderSizePixel = 0
+minimizeBtn.Parent = titleBar
+
+minimizeBtn.MouseEnter:Connect(function()
+    minimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 220, 50)
+end)
+minimizeBtn.MouseLeave:Connect(function()
+    minimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+end)
 
 -- CLOSE BUTTON
 local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 30, 0, 30)
-closeBtn.Position = UDim2.new(1, -35, 0, 5)
+closeBtn.Size = UDim2.new(0, 35, 0, 35)
+closeBtn.Position = UDim2.new(1, -38, 0, 5)
 closeBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-closeBtn.Text = "X"
+closeBtn.Text = "✕"
 closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 closeBtn.TextScaled = true
 closeBtn.BorderSizePixel = 0
-closeBtn.Parent = mainFrame
+closeBtn.Parent = titleBar
+
+closeBtn.MouseEnter:Connect(function()
+    closeBtn.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+end)
+closeBtn.MouseLeave:Connect(function()
+    closeBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+end)
 
 -- CONTENT CONTAINER
 local contentContainer = Instance.new("Frame")
-contentContainer.Size = UDim2.new(1, 0, 1, -40)
-contentContainer.Position = UDim2.new(0, 0, 0, 40)
+contentContainer.Size = UDim2.new(1, 0, 1, -45)
+contentContainer.Position = UDim2.new(0, 0, 0, 45)
 contentContainer.BackgroundTransparency = 1
 contentContainer.Parent = mainFrame
 
@@ -417,12 +552,12 @@ local function toggleMinimize()
     isMinimized = not isMinimized
     
     if isMinimized then
-        mainFrame:TweenSize(UDim2.new(0, 550, 0, 40), "Out", "Quad", 0.3, true)
+        mainFrame:TweenSize(UDim2.new(0, 550, 0, 45), "Out", "Quad", 0.3, true)
         contentContainer.Visible = false
         minimizeBtn.Text = "□"
         minimizeBtn.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
     else
-        mainFrame:TweenSize(UDim2.new(0, 550, 0, 700), "Out", "Quad", 0.3, true)
+        mainFrame:TweenSize(UDim2.new(0, 550, 0, 720), "Out", "Quad", 0.3, true)
         wait(0.35)
         contentContainer.Visible = true
         minimizeBtn.Text = "━"
@@ -435,6 +570,9 @@ minimizeBtn.MouseButton1Click:Connect(toggleMinimize)
 closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
     clearESP()
+    if godModeLoop then godModeLoop:Disconnect() end
+    if farmLoop then farmLoop:Disconnect() end
+    if antiFlingLoop then antiFlingLoop:Disconnect() end
 end)
 
 -- CREATE TAB FUNCTION
@@ -454,7 +592,7 @@ end
 -- CREATE SECTION FUNCTION
 local function createSection(name, parent)
     local section = Instance.new("Frame")
-    section.Size = UDim2.new(1, -20, 0, 550)
+    section.Size = UDim2.new(1, -20, 0, 570)
     section.Position = UDim2.new(0, 10, 0, 80)
     section.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
     section.BackgroundTransparency = 0.5
@@ -509,7 +647,7 @@ local function createToggle(text, callback, parent)
     frame.Parent = parent.scroll
     
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.7, 0, 1, 0)
+    label.Size = UDim2.new(0.65, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Text = text
     label.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -637,6 +775,10 @@ createToggle("Anti Fling", function(state)
     toggleAntiFling(state)
 end, mainSection)
 
+createToggle("God Mode", function(state)
+    toggleGodMode(state)
+end, mainSection)
+
 -- AIM TAB
 createToggle("Aimbot", function(state)
     aimbotEnabled = state
@@ -681,10 +823,6 @@ createButton("Teleport To Sheriff", function()
     end
 end, teleportSection)
 
-createButton("Teleport To Player", function()
-    createTeleportMenu()
-end, teleportSection)
-
 createButton("Teleport To Gun", function()
     local gun = getGun()
     if gun then
@@ -722,6 +860,10 @@ createButton("Throw Knife", function()
 end, farmSection)
 
 -- MISC TAB
+createButton("👥 Open Player Menu", function()
+    createPlayerMenu()
+end, miscSection)
+
 createButton("Fling Murderer", function()
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and getPlayerRole(player) == "Murderer" then
@@ -745,74 +887,6 @@ createButton("Fling All Players", function()
         if player ~= LocalPlayer then
             flingPlayer(player)
             wait(0.2)
-        end
-    end
-end, miscSection)
-
-createButton("Fling Target Player", function()
-    local menuFrame = Instance.new("Frame")
-    menuFrame.Size = UDim2.new(0, 300, 0, 400)
-    menuFrame.Position = UDim2.new(0.5, -150, 0.5, -200)
-    menuFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
-    menuFrame.BackgroundTransparency = 0.1
-    menuFrame.BorderSizePixel = 0
-    menuFrame.Parent = screenGui
-    
-    local menuCorner = Instance.new("UICorner")
-    menuCorner.CornerRadius = UDim.new(0, 12)
-    menuCorner.Parent = menuFrame
-    
-    local menuTitle = Instance.new("TextLabel")
-    menuTitle.Size = UDim2.new(1, 0, 0, 40)
-    menuTitle.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
-    menuTitle.Text = "Select Player To Fling"
-    menuTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-    menuTitle.TextScaled = true
-    menuTitle.Font = Enum.Font.GothamBold
-    menuTitle.BorderSizePixel = 0
-    menuTitle.Parent = menuFrame
-    
-    local closeMenuBtn = Instance.new("TextButton")
-    closeMenuBtn.Size = UDim2.new(0, 30, 0, 30)
-    closeMenuBtn.Position = UDim2.new(1, -35, 0, 5)
-    closeMenuBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-    closeMenuBtn.Text = "X"
-    closeMenuBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeMenuBtn.TextScaled = true
-    closeMenuBtn.BorderSizePixel = 0
-    closeMenuBtn.Parent = menuFrame
-    closeMenuBtn.MouseButton1Click:Connect(function()
-        menuFrame:Destroy()
-    end)
-    
-    local scrollFrame = Instance.new("ScrollingFrame")
-    scrollFrame.Size = UDim2.new(1, -10, 1, -50)
-    scrollFrame.Position = UDim2.new(0, 5, 0, 45)
-    scrollFrame.BackgroundTransparency = 1
-    scrollFrame.BorderSizePixel = 0
-    scrollFrame.ScrollBarThickness = 6
-    scrollFrame.Parent = menuFrame
-    
-    local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, 5)
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Parent = scrollFrame
-    
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local playerBtn = Instance.new("TextButton")
-            playerBtn.Size = UDim2.new(1, 0, 0, 35)
-            playerBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-            playerBtn.Text = player.Name .. " [" .. getPlayerRole(player) .. "]"
-            playerBtn.TextColor3 = ESP_TEAM_COLORS[getPlayerRole(player)] or Color3.fromRGB(255, 255, 255)
-            playerBtn.TextScaled = true
-            playerBtn.BorderSizePixel = 0
-            playerBtn.Parent = scrollFrame
-            
-            playerBtn.MouseButton1Click:Connect(function()
-                flingPlayer(player)
-                menuFrame:Destroy()
-            end)
         end
     end
 end, miscSection)
@@ -887,37 +961,3 @@ Players.PlayerAdded:Connect(function()
 end)
 
 -- UPDATE ESP COLORS ON ROLE CHANGE
-RunService.Heartbeat:Connect(function()
-    if espEnabled then
-        for _, player in pairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                local role = getPlayerRole(player)
-                local color = ESP_TEAM_COLORS[role] or Color3.fromRGB(255, 255, 255)
-                for _, obj in pairs(espObjects) do
-                    if obj:IsA("BoxHandleAdornment") and obj.Adornee == player.Character:FindFirstChild("HumanoidRootPart") then
-                        obj.Color3 = color
-                    end
-                end
-            end
-        end
-    end
-end)
-
--- HOTKEY FOR MINIMIZE
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    
-    if input.KeyCode == Enum.KeyCode.M and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-        toggleMinimize()
-    end
-end)
-
-print("MM2 HUB UPDATE Loaded Successfully!")
-print("✅ ESP: Murderer - Red, Sheriff - Blue, Innocent - Green")
-print("✅ Speed x2 and Super Jump")
-print("✅ Aimbot and Silent Aim")
-print("✅ Auto Farm Coins")
-print("✅ Anti Fling")
-print("✅ Teleport To Player Menu")
-print("✅ Fling Players")
-print("Press '━' or Ctrl+M to Minimize")
