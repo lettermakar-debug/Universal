@@ -1,8 +1,7 @@
 --[[
-    УНИВЕРСАЛЬНЫЙ СКРИПТ ДЛЯ ROBLOX
-    Функции: FLING, ESP, FLIGHT, TELEPORT, SPEED, GODMODE, NO CLIP
-    Система ключей: Админ-ключ (все функции) и Скриптер-ключ (базовые)
-    GUI появляется после ввода ключа, открывается/закрывается по Tab
+    УНИВЕРСАЛЬНЫЙ ХАБ ДЛЯ ROBLOX (ИСПРАВЛЕННАЯ ВЕРСИЯ)
+    Функции: FLING, ESP, FLIGHT, GODMODE, NO CLIP, SPEED, TELEPORT
+    Система ключей с GUI, сворачивание меню, Tab для открытия/закрытия
 --]]
 
 local Players = game:GetService("Players")
@@ -29,6 +28,7 @@ local SCRIPT_KEY = "ScriptKey456"    -- Замените на свой скри�
 local isAdmin = false
 local isScriptKey = false
 local guiOpen = false
+local guiMinimized = false
 local espEnabled = false
 local flightEnabled = false
 local flingCooldown = false
@@ -38,29 +38,30 @@ local speedMultiplier = 1
 local selectedPlayer = nil
 
 local espObjects = {}
+local espConnections = {}
 local flightBodyVelocity = nil
 local flightGyro = nil
-local noclipEnabled = false
+local noclipConnection = nil
 
 -- ==============================
--- СОЗДАНИЕ GUI (ТЁМНАЯ ТЕМА)
+-- СОЗДАНИЕ GUI
 -- ==============================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "UniversalHub"
 screenGui.Parent = player.PlayerGui
 
--- Основное окно (скрыто по умолчанию)
+-- Основное окно
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
 mainFrame.Size = UDim2.new(0, 420, 0, 540)
 mainFrame.Position = UDim2.new(0.5, -210, 0.5, -270)
 mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-mainFrame.BackgroundTransparency = 0.1
+mainFrame.BackgroundTransparency = 0.05
 mainFrame.BorderSizePixel = 0
 mainFrame.Visible = false
 mainFrame.Parent = screenGui
 
--- Заголовок
+-- Заголовок с кнопками свернуть/закрыть
 local titleBar = Instance.new("Frame")
 titleBar.Size = UDim2.new(1, 0, 0, 40)
 titleBar.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
@@ -68,7 +69,8 @@ titleBar.BorderSizePixel = 0
 titleBar.Parent = mainFrame
 
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, 0, 1, 0)
+titleLabel.Size = UDim2.new(0.7, 0, 1, 0)
+titleLabel.Position = UDim2.new(0.05, 0, 0, 0)
 titleLabel.Text = "УНИВЕРСАЛЬНЫЙ ХАБ"
 titleLabel.TextColor3 = Color3.fromRGB(200, 200, 255)
 titleLabel.TextScaled = true
@@ -76,7 +78,31 @@ titleLabel.Font = Enum.Font.GothamBold
 titleLabel.BackgroundTransparency = 1
 titleLabel.Parent = titleBar
 
--- Close button
+-- Кнопка свернуть
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+minimizeBtn.Position = UDim2.new(1, -70, 0, 5)
+minimizeBtn.Text = "—"
+minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 200)
+minimizeBtn.TextScaled = true
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 40)
+minimizeBtn.BorderSizePixel = 0
+minimizeBtn.Parent = titleBar
+minimizeBtn.MouseButton1Click:Connect(function()
+    guiMinimized = not guiMinimized
+    if guiMinimized then
+        mainFrame.Size = UDim2.new(0, 420, 0, 40)
+        scrollFrame.Visible = false
+        minimizeBtn.Text = "□"
+    else
+        mainFrame.Size = UDim2.new(0, 420, 0, 540)
+        scrollFrame.Visible = true
+        minimizeBtn.Text = "—"
+    end
+end)
+
+-- Кнопка закрыть
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.new(0, 30, 0, 30)
 closeBtn.Position = UDim2.new(1, -35, 0, 5)
@@ -130,10 +156,9 @@ function createButton(text, callback, color)
 end
 
 -- ==============================
--- GUI ПОСЛЕ ВВОДА КЛЮЧА
+-- ПОСТРОЕНИЕ UI
 -- ==============================
 function buildUI()
-    -- Очищаем старые кнопки
     for _, child in pairs(scrollFrame:GetChildren()) do
         if child:IsA("TextButton") or child:IsA("UIListLayout") then
             child:Destroy()
@@ -145,16 +170,16 @@ function buildUI()
     newList.Padding = UDim.new(0, 8)
     newList.Parent = scrollFrame
 
-    -- 1. FLING
-    createButton("💥 FLING (всех игроков)", function()
+    -- FLING
+    createButton("💥 FLING (ближайшего игрока)", function()
         if flingCooldown then return end
         flingCooldown = true
-        task.wait(2)
+        task.wait(1.5)
         flingCooldown = false
-        flingAllPlayers()
+        flingNearestPlayer()
     end, Color3.fromRGB(180, 40, 40))
 
-    -- 2. ESP
+    -- ESP
     createButton("👁️ ESP " .. (espEnabled and "ВЫКЛ" or "ВКЛ"), function()
         espEnabled = not espEnabled
         if espEnabled then
@@ -162,13 +187,10 @@ function buildUI()
         else
             disableESP()
         end
-        -- Обновляем текст кнопки
-        local btn = espEnabled and "👁️ ESP ВЫКЛ" or "👁️ ESP ВКЛ"
-        -- пересоздадим UI чтобы обновить текст (простой способ)
         buildUI()
     end, Color3.fromRGB(40, 80, 180))
 
-    -- 3. FLIGHT
+    -- FLIGHT
     createButton("✈️ ПОЛЁТ " .. (flightEnabled and "ВЫКЛ" or "ВКЛ"), function()
         flightEnabled = not flightEnabled
         if flightEnabled then
@@ -179,7 +201,7 @@ function buildUI()
         buildUI()
     end, Color3.fromRGB(40, 180, 80))
 
-    -- 4. GODMODE (бессмертие)
+    -- GODMODE
     if isAdmin then
         createButton("🛡️ БЕССМЕРТИЕ " .. (godModeEnabled and "ВЫКЛ" or "ВКЛ"), function()
             godModeEnabled = not godModeEnabled
@@ -188,7 +210,7 @@ function buildUI()
         end, Color3.fromRGB(180, 180, 40))
     end
 
-    -- 5. NO CLIP
+    -- NO CLIP
     if isAdmin then
         createButton("🚪 NO CLIP " .. (noClipEnabled and "ВЫКЛ" or "ВКЛ"), function()
             noClipEnabled = not noClipEnabled
@@ -197,7 +219,7 @@ function buildUI()
         end, Color3.fromRGB(180, 40, 180))
     end
 
-    -- 6. SPEED BOOST
+    -- SPEED
     if isAdmin then
         createButton("⚡ УСКОРЕНИЕ x" .. speedMultiplier, function()
             speedMultiplier = speedMultiplier == 1 and 2 or speedMultiplier == 2 and 3 or 1
@@ -206,7 +228,7 @@ function buildUI()
         end, Color3.fromRGB(40, 180, 180))
     end
 
-    -- 7. TELEPORT (только для админа)
+    -- TELEPORT
     if isAdmin then
         createButton("🌀 ТЕЛЕПОРТ к игроку", function()
             local target = selectPlayer()
@@ -219,12 +241,6 @@ function buildUI()
         end, Color3.fromRGB(40, 80, 180))
     end
 
-    -- 8. SCRIPT KEY функция: только FLING, ESP, FLIGHT (уже есть)
-    if not isAdmin and isScriptKey then
-        -- дополнительно можно добавить что-то ещё для скриптер-ключа
-    end
-
-    -- Обновляем CanvasSize
     task.wait()
     local children = scrollFrame:GetChildren()
     local totalHeight = 0
@@ -237,49 +253,82 @@ function buildUI()
 end
 
 -- ==============================
--- ФУНКЦИИ
+-- 1. FLING (ИСПРАВЛЕННЫЙ)
 -- ==============================
-
--- 1. FLING
-function flingAllPlayers()
+function flingNearestPlayer()
+    local nearest = nil
+    local minDist = math.huge
+    
     for _, target in pairs(Players:GetPlayers()) do
         if target ~= player then
             local targetChar = target.Character
             if targetChar and targetChar:FindFirstChild("HumanoidRootPart") then
-                local hrp = targetChar.HumanoidRootPart
-                local direction = (hrp.Position - rootPart.Position).Unit
-                local force = Vector3.new(
-                    (math.random() * 200 - 100) + direction.X * 150,
-                    math.random() * 150 + 100,
-                    (math.random() * 200 - 100) + direction.Z * 150
-                )
-                local bodyVelocity = Instance.new("BodyVelocity")
-                bodyVelocity.Velocity = force
-                bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-                bodyVelocity.Parent = hrp
-
-                task.wait(0.2)
-                bodyVelocity:Destroy()
-
-                -- Добавляем эффект разлета
-                local parts = targetChar:GetChildren()
-                for _, part in pairs(parts) do
-                    if part:IsA("BasePart") and part ~= hrp then
-                        local bv = Instance.new("BodyVelocity")
-                        bv.Velocity = Vector3.new(math.random(-50, 50), math.random(30, 80), math.random(-50, 50))
-                        bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-                        bv.Parent = part
-                        task.wait(0.1)
-                        bv:Destroy()
-                    end
+                local dist = (rootPart.Position - targetChar.HumanoidRootPart.Position).Magnitude
+                if dist < minDist then
+                    minDist = dist
+                    nearest = target
                 end
             end
         end
     end
+    
+    if not nearest then
+        return
+    end
+    
+    local targetChar = nearest.Character
+    if not targetChar then return end
+    
+    local targetHRP = targetChar:FindFirstChild("HumanoidRootPart")
+    if not targetHRP then return end
+    
+    -- Телепортируемся к игроку
+    rootPart.CFrame = targetHRP.CFrame + Vector3.new(0, 2, 3)
+    task.wait(0.1)
+    
+    -- Создаём мощный флинг
+    local force = Vector3.new(
+        math.random(-300, 300),
+        math.random(200, 400),
+        math.random(-300, 300)
+    )
+    
+    -- Основной толчок
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.Velocity = force
+    bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    bodyVelocity.Parent = targetHRP
+    
+    -- Разбрасываем все части тела
+    for _, part in pairs(targetChar:GetChildren()) do
+        if part:IsA("BasePart") and part ~= targetHRP then
+            local bv = Instance.new("BodyVelocity")
+            bv.Velocity = Vector3.new(
+                math.random(-150, 150),
+                math.random(100, 250),
+                math.random(-150, 150)
+            )
+            bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+            bv.Parent = part
+            task.wait(0.05)
+            bv:Destroy()
+        end
+    end
+    
+    -- Взрывной эффект (свет)
+    local explosion = Instance.new("Explosion")
+    explosion.Position = targetHRP.Position
+    explosion.BlastRadius = 15
+    explosion.BlastPressure = 500000
+    explosion.Parent = Workspace
+    
+    task.wait(0.3)
+    bodyVelocity:Destroy()
 end
 
--- 2. ESP
-local espConnections = {}
+-- ==============================
+-- 2. ESP (ИСПРАВЛЕННЫЙ)
+-- ==============================
 function enableESP()
     disableESP()
     for _, target in pairs(Players:GetPlayers()) do
@@ -321,7 +370,6 @@ function enableESP()
         end
     end
 
-    -- Обновление здоровья в ESP
     local updateConnection = RunService.RenderStepped:Connect(function()
         for target, data in pairs(espObjects) do
             if target and target.Character then
@@ -342,7 +390,6 @@ function enableESP()
     end)
     table.insert(espConnections, updateConnection)
 
-    -- Очистка ESP при удалении игроков
     local playerRemovedConnection = Players.PlayerRemoving:Connect(function(target)
         if espObjects[target] then
             if espObjects[target].box then espObjects[target].box:Destroy() end
@@ -365,12 +412,13 @@ function disableESP()
     espObjects = {}
 end
 
--- 3. FLIGHT
+-- ==============================
+-- 3. FLIGHT (ИСПРАВЛЕННЫЙ)
+-- ==============================
 function enableFlight()
     if flightEnabled then return end
     flightEnabled = true
 
-    -- Создаём BodyVelocity и BodyGyro для управления
     flightBodyVelocity = Instance.new("BodyVelocity")
     flightBodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
     flightBodyVelocity.Parent = rootPart
@@ -379,6 +427,8 @@ function enableFlight()
     flightGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
     flightGyro.Parent = rootPart
 
+    humanoid.PlatformStand = true
+
     local flightSpeed = 50
     local verticalSpeed = 30
 
@@ -386,10 +436,18 @@ function enableFlight()
         if not flightEnabled or not flightBodyVelocity then return end
 
         local moveDirection = Vector3.new(0, 0, 0)
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDirection = moveDirection + Camera.CFrame.LookVector * Vector3.new(1, 0, 1) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDirection = moveDirection - Camera.CFrame.LookVector * Vector3.new(1, 0, 1) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDirection = moveDirection - Camera.CFrame.RightVector * Vector3.new(1, 0, 1) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDirection = moveDirection + Camera.CFrame.RightVector * Vector3.new(1, 0, 1) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then 
+            moveDirection = moveDirection + Camera.CFrame.LookVector * Vector3.new(1, 0, 1) 
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then 
+            moveDirection = moveDirection - Camera.CFrame.LookVector * Vector3.new(1, 0, 1) 
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then 
+            moveDirection = moveDirection - Camera.CFrame.RightVector * Vector3.new(1, 0, 1) 
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then 
+            moveDirection = moveDirection + Camera.CFrame.RightVector * Vector3.new(1, 0, 1) 
+        end
 
         if moveDirection.Magnitude > 0 then
             moveDirection = moveDirection.Unit * flightSpeed
@@ -405,9 +463,6 @@ function enableFlight()
 
     local flightConnection = RunService.RenderStepped:Connect(updateFlight)
     table.insert(espConnections, flightConnection)
-
-    -- Отключаем гравитацию
-    humanoid.PlatformStand = true
 end
 
 function disableFlight()
@@ -419,7 +474,9 @@ function disableFlight()
     humanoid.PlatformStand = false
 end
 
+-- ==============================
 -- 4. GODMODE
+-- ==============================
 function toggleGodMode()
     godModeEnabled = not godModeEnabled
     if godModeEnabled then
@@ -433,15 +490,16 @@ function toggleGodMode()
     end
 end
 
--- 5. NO CLIP
+-- ==============================
+-- 5. NO CLIP (ИСПРАВЛЕННЫЙ)
+-- ==============================
 function toggleNoClip()
     noClipEnabled = not noClipEnabled
     if noClipEnabled then
-        noclipEnabled = true
-        local ncConnection
-        ncConnection = RunService.RenderStepped:Connect(function()
+        if noclipConnection then noclipConnection:Disconnect() end
+        noclipConnection = RunService.RenderStepped:Connect(function()
             if not noClipEnabled then
-                ncConnection:Disconnect()
+                noclipConnection:Disconnect()
                 return
             end
             for _, part in pairs(character:GetChildren()) do
@@ -450,8 +508,8 @@ function toggleNoClip()
                 end
             end
         end)
-        table.insert(espConnections, ncConnection)
     else
+        if noclipConnection then noclipConnection:Disconnect() end
         for _, part in pairs(character:GetChildren()) do
             if part:IsA("BasePart") then
                 part.CanCollide = true
@@ -460,10 +518,12 @@ function toggleNoClip()
     end
 end
 
--- 6. ТЕЛЕПОРТ (выбор игрока)
+-- ==============================
+-- 6. TELEPORT (ВЫБОР ИГРОКА)
+-- ==============================
 function selectPlayer()
     local players = {}
-    for i, plr in pairs(Players:GetPlayers()) do
+    for _, plr in pairs(Players:GetPlayers()) do
         if plr ~= player then
             table.insert(players, plr)
         end
@@ -471,7 +531,6 @@ function selectPlayer()
     if #players == 0 then
         return nil
     end
-    -- Простой выбор: возвращаем первого игрока (можно сделать GUI список)
     return players[1]
 end
 
@@ -485,6 +544,10 @@ function showKeyPrompt()
     keyFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
     keyFrame.BorderSizePixel = 0
     keyFrame.Parent = screenGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = keyFrame
 
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 40)
@@ -553,14 +616,6 @@ function showKeyPrompt()
             submitBtn.MouseButton1Click:Fire()
         end
     end)
-
-    -- Нажатие Enter в поле ввода
-    input:GetPropertyChangedSignal("Text"):Connect(function()
-        if input.Text ~= "" and input.Text:sub(-1) == "\n" then
-            input.Text = input.Text:sub(1, -2)
-            submitBtn.MouseButton1Click:Fire()
-        end
-    end)
 end
 
 -- ==============================
@@ -571,6 +626,12 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if input.KeyCode == Enum.KeyCode.Tab then
         guiOpen = not guiOpen
         mainFrame.Visible = guiOpen
+        if guiOpen then
+            guiMinimized = false
+            mainFrame.Size = UDim2.new(0, 420, 0, 540)
+            scrollFrame.Visible = true
+            minimizeBtn.Text = "—"
+        end
     end
 end)
 
@@ -579,7 +640,6 @@ end)
 -- ==============================
 showKeyPrompt()
 
--- Очистка при выходе игрока
 player.CharacterAdded:Connect(function(newChar)
     character = newChar
     rootPart = character:WaitForChild("HumanoidRootPart")
@@ -589,9 +649,12 @@ player.CharacterAdded:Connect(function(newChar)
     if flightGyro then flightGyro:Destroy() end
     flightBodyVelocity = nil
     flightGyro = nil
+    if noClipEnabled then
+        noClipEnabled = false
+        if noclipConnection then noclipConnection:Disconnect() end
+    end
 end)
 
--- Отключение ESP при выходе
 Players.PlayerRemoving:Connect(function(target)
     if espObjects[target] then
         if espObjects[target].box then espObjects[target].box:Destroy() end
@@ -600,4 +663,4 @@ Players.PlayerRemoving:Connect(function(target)
     end
 end)
 
-print("✅ Универсальный хаб загружен! Введите ключ для доступа.")
+print("✅ Универсальный хаб загружен! Введите ключ для доступа. Tab — открыть/закрыть меню.")
